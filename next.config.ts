@@ -11,7 +11,6 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_MAPTILER_KEY: process.env.NEXT_PUBLIC_MAPTILER_KEY,
   },
-  assetPrefix: "/family-history-map/",
   webpack: (config) => {
     config.module.rules.push({
       test: /\.mjs$/,
