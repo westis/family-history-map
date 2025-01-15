@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   description: "Interactive family history map visualization",
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_BASE_URL ||
-      "https://yourusername.github.io/family-history-map"
+      "https://westis.github.io/family-history-map"
   ),
 };
 
