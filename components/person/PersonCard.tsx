@@ -29,6 +29,22 @@ export function PersonCard({
 
   const { person } = selectedPerson;
 
+  const formatDate = (date: {
+    year: number | null;
+    month?: number;
+    day?: number;
+  }) => {
+    if (!date.year) return "";
+    let result = `${date.year}`;
+    if (date.month) {
+      result = `${date.month}/${result}`;
+      if (date.day) {
+        result = `${date.day}/${result}`;
+      }
+    }
+    return result;
+  };
+
   return (
     <Card className="absolute bottom-12 left-4 p-4 max-w-md bg-white shadow-lg z-[1000] max-h-[50vh] overflow-y-auto">
       <div className="flex flex-col h-full">
@@ -101,8 +117,7 @@ export function PersonCard({
               >
                 <div className="font-medium text-blue-900">Birth</div>
                 <div className="text-sm text-gray-600">
-                  {event.date.from}
-                  {event.date.to && ` to ${event.date.to}`}
+                  {formatDate(event.date)}
                 </div>
                 <div className="flex justify-between items-center text-sm mt-1">
                   <span className="text-gray-700">{event.place}</span>
@@ -130,8 +145,7 @@ export function PersonCard({
               >
                 <div className="font-medium text-blue-900">Death</div>
                 <div className="text-sm text-gray-600">
-                  {event.date.from}
-                  {event.date.to && ` to ${event.date.to}`}
+                  {formatDate(event.date)}
                 </div>
                 <div className="flex justify-between items-center text-sm mt-1">
                   <span className="text-gray-700">{event.place}</span>
@@ -200,8 +214,7 @@ export function PersonCard({
                       }`}
                     >
                       <div className="text-sm text-gray-600">
-                        {event.date.from}
-                        {event.date.to && ` to ${event.date.to}`}
+                        {formatDate(event.date)}
                       </div>
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-gray-700">{event.place}</span>
