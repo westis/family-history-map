@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 
-const FamilyMap = dynamic(() => import("@/components/FamilyMap"), {
+const FamilyMap = dynamic(() => import("./FamilyMap"), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center h-screen">

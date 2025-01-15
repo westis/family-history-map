@@ -35,6 +35,13 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Debug - List build output
+        run: |
+          echo "Contents of out directory:"
+          ls -la out/
+          echo "Contents of out/_next directory:"
+          ls -la out/_next/
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
