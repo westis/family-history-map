@@ -24,6 +24,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useFamilyMap } from "@/contexts/FamilyMapContext";
+import { parseGEDCOM } from "@/utils/gedcom-parser";
+import { calculateRelationships } from "@/utils/relationship-calculator";
+import type { Person, Event } from "@/types/family-map";
 
 export default function FamilyMap() {
   const {
