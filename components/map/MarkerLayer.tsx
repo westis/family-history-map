@@ -3,28 +3,7 @@ import { Person, Event } from "@/types/family-map";
 import L from "leaflet";
 import { useRef, useEffect } from "react";
 import "leaflet.markercluster";
-
-// Extend the Leaflet types
-declare module "leaflet" {
-  interface MarkerClusterGroupOptions {
-    spiderfyOnMaxZoom?: boolean;
-    zoomToBoundsOnClick?: boolean;
-    disableClusteringAtZoom?: number;
-    maxClusterRadius?: number;
-    iconCreateFunction?: (cluster: MarkerCluster) => L.DivIcon;
-  }
-
-  class MarkerCluster extends L.Layer {
-    getAllChildMarkers(): L.Marker[];
-    getLatLng(): L.LatLng;
-  }
-
-  class MarkerClusterGroup extends L.FeatureGroup {
-    constructor(options?: MarkerClusterGroupOptions);
-    addLayer(layer: L.Layer): this;
-    removeLayer(layer: L.Layer): this;
-  }
-}
+import "../types/leaflet-extensions";
 
 interface MarkerLayerProps {
   events: { person: Person; event: Event }[];
