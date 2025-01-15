@@ -368,7 +368,10 @@ function MarkerLayer({
 
   useEffect(() => {
     // Create a function to get marker icon based on event type and active state
-    const getMarkerIcon = (event: Event, isActive: boolean) => {
+    const getMarkerIcon = (event: Event, isActive: boolean | null) => {
+      // Convert null to false for the isActive parameter
+      const active = isActive ?? false;
+
       const color =
         event.type === "BIRT"
           ? "green"
@@ -377,13 +380,13 @@ function MarkerLayer({
           : "blue";
 
       return new Icon({
-        iconUrl: isActive
+        iconUrl: active
           ? `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`
           : `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
         shadowUrl:
           "https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png",
-        iconSize: isActive ? [35, 57] : [25, 41],
-        iconAnchor: isActive ? [17, 57] : [12, 41],
+        iconSize: active ? [35, 57] : [25, 41],
+        iconAnchor: active ? [17, 57] : [12, 41],
       });
     };
 
