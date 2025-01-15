@@ -10,9 +10,6 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_MAPTILER_KEY: process.env.NEXT_PUBLIC_MAPTILER_KEY,
   },
-  experimental: {
-    appDir: true,
-  },
 };
 
 export default nextConfig;
