@@ -364,30 +364,39 @@ function MarkerLayer({
   activeCoordinates: [number, number] | null;
 }) {
   const map = useMap();
-  const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const markersRef = useRef<Map<string, L.CircleMarker>>(new Map());
 
   useEffect(() => {
-    // Create a function to get marker icon based on event type and active state
-    const getMarkerIcon = (event: Event, isActive: boolean | null) => {
-      // Convert null to false for the isActive parameter
+    // Create a function to get marker style based on event type and active state
+    const getMarkerStyle = (event: Event, isActive: boolean | null) => {
       const active = isActive ?? false;
+      const baseStyle = {
+        radius: active ? 8 : 6,
+        fillOpacity: active ? 0.8 : 0.6,
+        stroke: true,
+        weight: active ? 2 : 1,
+      };
 
-      const color =
-        event.type === "BIRT"
-          ? "green"
-          : event.type === "DEAT"
-          ? "red"
-          : "blue";
-
-      return new Icon({
-        iconUrl: active
-          ? `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`
-          : `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
-        shadowUrl:
-          "https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png",
-        iconSize: active ? [35, 57] : [25, 41],
-        iconAnchor: active ? [17, 57] : [12, 41],
-      });
+      switch (event.type) {
+        case "BIRT":
+          return {
+            ...baseStyle,
+            color: "#38a169",
+            fillColor: "#38a169",
+          };
+        case "DEAT":
+          return {
+            ...baseStyle,
+            color: "#e53e3e",
+            fillColor: "#e53e3e",
+          };
+        case "RESI":
+          return {
+            ...baseStyle,
+            color: "#3182ce",
+            fillColor: "#3182ce",
+          };
+      }
     };
 
     const markers = new L.MarkerClusterGroup({
@@ -397,15 +406,12 @@ function MarkerLayer({
       maxClusterRadius: 30,
       iconCreateFunction: function (cluster: L.MarkerCluster) {
         const markers = cluster.getAllChildMarkers();
-
-        // Create a Set of unique locations using coordinates as key
         const uniqueLocations = new Set(
           markers.map((marker) => {
             const coords = marker.getLatLng();
             return `${coords.lat},${coords.lng}`;
           })
         );
-
         const count = uniqueLocations.size;
 
         let size = "small";
@@ -420,7 +426,6 @@ function MarkerLayer({
       },
     });
 
-    // Store markers ref in a variable for cleanup
     const currentMarkersRef = markersRef.current;
 
     events.forEach(({ person, event }) => {
@@ -429,15 +434,14 @@ function MarkerLayer({
         activeCoordinates[0] === event.coordinates[0] &&
         activeCoordinates[1] === event.coordinates[1];
 
-      const marker = L.marker([event.coordinates[0], event.coordinates[1]], {
-        icon: getMarkerIcon(event, isActive),
-        zIndexOffset: isActive ? 1000 : 0, // Make active marker appear on top
-      }).on("click", (e) => {
+      const marker = L.circleMarker(
+        [event.coordinates[0], event.coordinates[1]],
+        getMarkerStyle(event, isActive)
+      ).on("click", (e) => {
         L.DomEvent.stopPropagation(e);
         onSelect(person, event);
       });
 
-      // Store reference to marker
       const coordKey = `${event.coordinates[0]},${event.coordinates[1]}`;
       markersRef.current.set(coordKey, marker);
       markers.addLayer(marker);
@@ -445,23 +449,11 @@ function MarkerLayer({
 
     map.addLayer(markers);
 
-    // Handle active marker
     if (activeCoordinates) {
       const coordKey = `${activeCoordinates[0]},${activeCoordinates[1]}`;
       const marker = markersRef.current.get(coordKey);
       if (marker) {
-        marker.setZIndexOffset(1000); // Ensure active marker is on top
-        map.setView(activeCoordinates, 14); // Zoom to the active marker
-
-        // Add bounce animation class
-        const icon = marker.getElement();
-        if (icon) {
-          icon.classList.add("marker-bounce");
-          // Remove animation after 2 seconds
-          setTimeout(() => {
-            icon.classList.remove("marker-bounce");
-          }, 2000);
-        }
+        map.setView(activeCoordinates, 14);
       }
     }
 
@@ -944,10 +936,19 @@ export default function FamilyMap() {
           Upload a GEDCOM file to view your family map
         </div>
       ) : (
-        <MapContainer center={[56.85, 14]} zoom={7} className="h-full w-full">
+        <MapContainer
+          center={[56.85, 14]}
+          zoom={7}
+          className="h-full w-full"
+          zoomControl={true}
+          minZoom={3}
+          maxZoom={18}
+        >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='<a href="https://www.maptiler.com/copyright/" target="_blank">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>'
+            url={`https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`}
+            maxZoom={19}
+            tileSize={256}
           />
           <MarkerLayer
             events={filteredEvents}
