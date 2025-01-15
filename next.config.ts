@@ -8,6 +8,12 @@ const nextConfig: NextConfig = {
   },
   distDir: "out",
   trailingSlash: true,
+  env: {
+    NEXT_PUBLIC_LANTMATERIET_CONSUMER_KEY:
+      process.env.NEXT_PUBLIC_LANTMATERIET_CONSUMER_KEY,
+    NEXT_PUBLIC_LANTMATERIET_CONSUMER_SECRET:
+      process.env.NEXT_PUBLIC_LANTMATERIET_CONSUMER_SECRET,
+  },
 };
 
 export default nextConfig;

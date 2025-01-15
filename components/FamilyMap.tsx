@@ -414,8 +414,10 @@ export default function FamilyMap() {
       ) : (
         <MapContainer center={[56.85, 14]} zoom={7} className="h-full w-full">
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url={`https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=${process.env.NEXT_PUBLIC_MAPTILER_KEY}`}
+            maxZoom={19}
+            tileSize={256}
           />
           <MarkerLayer
             events={filteredEvents}
