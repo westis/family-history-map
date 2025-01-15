@@ -20,27 +20,23 @@ export function MarkerLayer({
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
 
   useEffect(() => {
-    const getMarkerIcon = (event: Event, isActive: boolean | null) => {
+    const getMarkerOptions = (event: Event, isActive: boolean | null) => {
       const active = isActive ?? false;
       const color =
         event.type === "BIRT"
-          ? "#4ade80" // green-400
+          ? "#22c55e" // green-500
           : event.type === "DEAT"
-          ? "#f87171" // red-400
-          : "#60a5fa"; // blue-400
+          ? "#ef4444" // red-500
+          : "#3b82f6"; // blue-500
 
-      return L.divIcon({
-        className: "custom-div-icon",
-        html: `
-          <div class="marker-pin ${
-            active ? "active" : ""
-          }" style="background-color: ${color}">
-            ${active ? '<div class="marker-pulse"></div>' : ""}
-          </div>
-        `,
-        iconSize: active ? [24, 24] : [16, 16],
-        iconAnchor: active ? [12, 12] : [8, 8],
-      });
+      return {
+        radius: active ? 5 : 3,
+        fillColor: color,
+        color: "white",
+        weight: 1,
+        opacity: 1,
+        fillOpacity: 1,
+      };
     };
 
     const markers = new L.MarkerClusterGroup({
@@ -78,10 +74,10 @@ export function MarkerLayer({
         activeCoordinates[0] === event.coordinates[0] &&
         activeCoordinates[1] === event.coordinates[1];
 
-      const marker = L.marker([event.coordinates[0], event.coordinates[1]], {
-        icon: getMarkerIcon(event, isActive),
-        zIndexOffset: isActive ? 1000 : 0,
-      }).on("click", (e) => {
+      const marker = L.circleMarker(
+        [event.coordinates[0], event.coordinates[1]],
+        getMarkerOptions(event, isActive)
+      ).on("click", (e) => {
         L.DomEvent.stopPropagation(e);
         onSelect(person, event);
       });
