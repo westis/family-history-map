@@ -1,17 +1,13 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Card } from "@/components/ui/card";
+import { MapContainer, TileLayer } from "react-leaflet";
+import { MarkerLayer } from "./map/MarkerLayer";
+import { MapController } from "./map/MapController";
+import { PersonCard } from "./person/PersonCard";
 import { Button } from "@/components/ui/button";
-import { FileUp, Check, ChevronsUpDown, Loader2, X } from "lucide-react";
-import { MapContainer, TileLayer, useMap } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
-import "leaflet.markercluster/dist/MarkerCluster.css";
-import "leaflet.markercluster/dist/MarkerCluster.Default.css";
-import L from "leaflet";
-import { Icon } from "leaflet";
+import { FileUp, Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { RangeSlider } from "@/components/ui/range-slider";
-import "leaflet.markercluster";
 import {
   Command,
   CommandInput,
@@ -535,79 +531,59 @@ type EventType = "BIRT" | "DEAT" | "RESI";
 type RelationFilter = "all" | "ancestors" | "descendants";
 
 export default function FamilyMap() {
-  const [people, setPeople] = useState<Person[]>([]);
-  const [yearRange, setYearRange] = useState([1800, 2024]);
+  const {
+    people,
+    setPeople,
+    yearRange,
+    setYearRange,
+    selectedEventTypes,
+    setSelectedEventTypes,
+    relationFilter,
+    setRelationFilter,
+    rootPerson,
+    setRootPerson,
+    isCalculating,
+    setIsCalculating,
+    relationships,
+    setRelationships,
+  } = useFamilyMap();
+
   const [selectedPerson, setSelectedPerson] = useState<{
     person: Person;
     event: Event;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [rootPerson, setRootPerson] = useState<string | null>(null);
-  const [relationships, setRelationships] = useState<Map<string, string>>(
-    new Map()
-  );
   const [searchTerm, setSearchTerm] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [zoomToLocation, setZoomToLocation] = useState<{
     coordinates: [number, number];
     zoom?: number;
   } | null>(null);
-  const [selectedEventTypes, setSelectedEventTypes] = useState<EventType[]>([
-    "BIRT",
-    "DEAT",
-    "RESI",
-  ]);
-  // Add state for the relation filter
-  const [relationFilter, setRelationFilter] = useState<RelationFilter>("all");
-  const [isCalculating, setIsCalculating] = useState(false);
-  // Add state for the active marker
   const [activeCoordinates, setActiveCoordinates] = useState<
     [number, number] | null
   >(null);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = event.target.files?.[0];
-    if (!file) {
-      console.log("No file selected");
-      return;
-    }
-
-    console.log("File selected:", file.name);
+    if (!file) return;
 
     const reader = new FileReader();
-
     reader.onload = (e) => {
-      try {
-        const content = e.target?.result as string;
-        console.log("File content length:", content.length);
+      const content = e.target?.result as string;
+      const parsedPeople = parseGEDCOM(content);
+      setPeople(parsedPeople);
 
-        const parsedPeople = parseGEDCOM(content);
-        console.log("Parsed people:", parsedPeople.length);
+      const years = parsedPeople.flatMap((p) =>
+        p.events.map((e) => e.date.year).filter((y): y is number => y !== null)
+      );
 
-        setPeople(parsedPeople);
-
-        // Set year range based on data
-        const years = parsedPeople.flatMap((p) =>
-          p.events
-            .map((e) => e.date.year)
-            .filter((y): y is number => y !== null)
-        );
-
-        if (years.length) {
-          const minYear = Math.min(...years);
-          const maxYear = Math.max(...years);
-          console.log("Setting year range:", minYear, maxYear);
-          setYearRange([minYear, maxYear]);
-        } else {
-          console.log("No valid years found in the data");
-        }
-      } catch (error) {
-        console.error("Error parsing GEDCOM:", error);
+      if (years.length) {
+        const minYear = Math.min(...years);
+        const maxYear = Math.max(...years);
+        setYearRange([minYear, maxYear]);
       }
-    };
-
-    reader.onerror = (error) => {
-      console.error("Error reading file:", error);
     };
 
     reader.readAsText(file);
@@ -617,28 +593,45 @@ export default function FamilyMap() {
     fileInputRef.current?.click();
   };
 
-  // Update filteredEvents to include relation filtering
+  useEffect(() => {
+    if (rootPerson && people.length > 0) {
+      setIsCalculating(true);
+      const calculateAsync = async () => {
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          const newRelationships = calculateRelationships(people, rootPerson);
+          setRelationships(newRelationships);
+          setRelationFilter("all");
+        } finally {
+          setIsCalculating(false);
+        }
+      };
+      calculateAsync();
+    } else {
+      setRelationships(new Map());
+    }
+  }, [
+    rootPerson,
+    people,
+    setIsCalculating,
+    setRelationships,
+    setRelationFilter,
+  ]);
+
   const filteredEvents = React.useMemo(() => {
     return people.flatMap((person) => {
-      // Skip if relation filter is active and person doesn't match the filter
       if (rootPerson && relationFilter !== "all") {
         const relationship = relationships.get(person.id);
         if (!relationship || relationship === "Not Related") return [];
-
-        // Skip root person if filtering
         if (relationship === "Root Person") return [];
 
         if (relationFilter === "ancestors") {
-          // Check if relationship code contains only parent codes (f/m)
-          // and doesn't contain any child codes (s/d)
           const hasChildCodes = /[sd]/.test(relationship);
           const hasParentCodes = /[fm]/.test(relationship);
           if (hasChildCodes || !hasParentCodes) return [];
         }
 
         if (relationFilter === "descendants") {
-          // Check if relationship code contains only child codes (s/d)
-          // and doesn't contain any parent codes (f/m)
           const hasParentCodes = /[fm]/.test(relationship);
           const hasChildCodes = /[sd]/.test(relationship);
           if (hasParentCodes || !hasChildCodes) return [];
@@ -667,47 +660,17 @@ export default function FamilyMap() {
     relationships,
   ]);
 
-  // Update the useEffect to store relationships separately
-  useEffect(() => {
-    async function calculateRelationshipsAsync() {
-      if (rootPerson && people.length > 0) {
-        setIsCalculating(true);
-        try {
-          // Wrap in setTimeout to allow UI to update
-          await new Promise((resolve) => setTimeout(resolve, 0));
-          const newRelationships = calculateRelationships(people, rootPerson);
-          setRelationships(newRelationships);
-          setRelationFilter("all");
-        } finally {
-          setIsCalculating(false);
-        }
-      } else {
-        setRelationships(new Map());
-      }
-    }
-
-    calculateRelationshipsAsync();
-  }, [rootPerson, people]);
-
-  // Helper function to get relationship for a person
-  const getRelationship = (personId: string) => relationships.get(personId);
-
-  // Filter people based on search term
   const filteredPeople = React.useMemo(() => {
     if (!searchTerm) return people;
-
     const searchTerms = searchTerm.toLowerCase().trim().split(/\s+/);
-
     return people
       .filter((person) => {
         const name = person.name.toLowerCase();
-        // Match if all search terms are found in the name in any order
         return searchTerms.every((term) => name.includes(term));
       })
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [people, searchTerm]);
 
-  // Update the click handler to zoom closer
   const handleLocationClick = (
     coordinates: [number, number],
     currentZoom?: number
@@ -717,10 +680,13 @@ export default function FamilyMap() {
       zoom: currentZoom ? currentZoom + 2 : 14,
     });
     setActiveCoordinates(coordinates);
-    // Clear the active marker after animation
     setTimeout(() => {
       setActiveCoordinates(null);
     }, 2000);
+  };
+
+  const handleYearRangeChange = (value: number[]) => {
+    setYearRange([value[0], value[1]] as [number, number]);
   };
 
   return (
@@ -747,7 +713,7 @@ export default function FamilyMap() {
             min={1500}
             max={2024}
             step={1}
-            onValueChange={setYearRange}
+            onValueChange={handleYearRangeChange}
             className="my-4"
           />
           <div className="flex justify-between mt-2 text-sm text-gray-600">
@@ -765,11 +731,12 @@ export default function FamilyMap() {
                 selectedEventTypes.includes("BIRT") ? "default" : "outline"
               }
               onClick={() => {
-                setSelectedEventTypes((prev) =>
-                  prev.includes("BIRT")
-                    ? prev.filter((t) => t !== "BIRT")
-                    : [...prev, "BIRT"]
-                );
+                setSelectedEventTypes((prev) => {
+                  if (prev.includes("BIRT")) {
+                    return prev.filter((t) => t !== "BIRT");
+                  }
+                  return [...prev, "BIRT"];
+                });
               }}
               className="flex items-center gap-1"
             >
@@ -785,11 +752,12 @@ export default function FamilyMap() {
                 selectedEventTypes.includes("DEAT") ? "default" : "outline"
               }
               onClick={() => {
-                setSelectedEventTypes((prev) =>
-                  prev.includes("DEAT")
-                    ? prev.filter((t) => t !== "DEAT")
-                    : [...prev, "DEAT"]
-                );
+                setSelectedEventTypes((prev) => {
+                  if (prev.includes("DEAT")) {
+                    return prev.filter((t) => t !== "DEAT");
+                  }
+                  return [...prev, "DEAT"];
+                });
               }}
               className="flex items-center gap-1"
             >
@@ -805,11 +773,12 @@ export default function FamilyMap() {
                 selectedEventTypes.includes("RESI") ? "default" : "outline"
               }
               onClick={() => {
-                setSelectedEventTypes((prev) =>
-                  prev.includes("RESI")
-                    ? prev.filter((t) => t !== "RESI")
-                    : [...prev, "RESI"]
-                );
+                setSelectedEventTypes((prev) => {
+                  if (prev.includes("RESI")) {
+                    return prev.filter((t) => t !== "RESI");
+                  }
+                  return [...prev, "RESI"];
+                });
               }}
               className="flex items-center gap-1"
             >
@@ -945,8 +914,19 @@ export default function FamilyMap() {
           Upload a GEDCOM file to view your family map
         </div>
       ) : (
-        <MapContainer center={[56.85, 14]} zoom={7} className="h-full w-full">
+        <MapContainer
+          center={[56.85, 14]}
+          zoom={7}
+          className="h-full w-full"
+          zoomControl={true}
+          minZoom={3}
+          maxZoom={18}
+        >
           <TileLayer
+            attribution='<a href="https://www.maptiler.com/copyright/" target="_blank">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>'
+            url={`https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`}
+            maxZoom={19}
+            tileSize={256}
             attribution='<a href="https://www.maptiler.com/copyright/" target="_blank">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>'
             url={`https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`}
             maxZoom={19}
