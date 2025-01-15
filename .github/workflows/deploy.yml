@@ -32,10 +32,13 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Check output directory
+        run: ls -la out
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./out
+          path: out
 
   deploy:
     environment:
