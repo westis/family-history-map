@@ -369,24 +369,25 @@ function MarkerLayer({
   useEffect(() => {
     // Create a function to get marker icon based on event type and active state
     const getMarkerIcon = (event: Event, isActive: boolean | null) => {
-      // Convert null to false for the isActive parameter
       const active = isActive ?? false;
-
       const color =
         event.type === "BIRT"
-          ? "green"
+          ? "#15803d" // green-700 - darker green
           : event.type === "DEAT"
-          ? "red"
-          : "blue";
+          ? "#b91c1c" // red-700 - darker red
+          : "#1d4ed8"; // blue-700 - darker blue
 
-      return new Icon({
-        iconUrl: active
-          ? `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`
-          : `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
-        shadowUrl:
-          "https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png",
-        iconSize: active ? [35, 57] : [25, 41],
-        iconAnchor: active ? [17, 57] : [12, 41],
+      return L.divIcon({
+        className: "custom-div-icon",
+        html: `
+          <div class="marker-pin ${
+            active ? "active" : ""
+          }" style="background-color: ${color}; box-shadow: 0 0 0 2px white;">
+            ${active ? '<div class="marker-pulse"></div>' : ""}
+          </div>
+        `,
+        iconSize: active ? [24, 24] : [16, 16],
+        iconAnchor: active ? [12, 12] : [8, 8],
       });
     };
 
@@ -774,7 +775,7 @@ export default function FamilyMap() {
             >
               <div
                 className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: "#38a169" }}
+                style={{ backgroundColor: "#15803d" }}
               />
               Birth
             </Button>
@@ -794,7 +795,7 @@ export default function FamilyMap() {
             >
               <div
                 className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: "#e53e3e" }}
+                style={{ backgroundColor: "#b91c1c" }}
               />
               Death
             </Button>
@@ -814,7 +815,7 @@ export default function FamilyMap() {
             >
               <div
                 className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: "#3182ce" }}
+                style={{ backgroundColor: "#1d4ed8" }}
               />
               Living
             </Button>
@@ -946,8 +947,10 @@ export default function FamilyMap() {
       ) : (
         <MapContainer center={[56.85, 14]} zoom={7} className="h-full w-full">
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='<a href="https://www.maptiler.com/copyright/" target="_blank">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>'
+            url={`https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`}
+            maxZoom={19}
+            tileSize={256}
           />
           <MarkerLayer
             events={filteredEvents}
