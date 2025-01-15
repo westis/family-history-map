@@ -1,9 +1,5 @@
-import ClientFamilyMap from "@/components/ClientFamilyMap";
+import FamilyMap from "@/components/FamilyMap";
 
 export default function Home() {
-  return (
-    <main className="h-screen w-screen overflow-hidden">
-      <ClientFamilyMap />
-    </main>
-  );
+  return <FamilyMap />;
 }

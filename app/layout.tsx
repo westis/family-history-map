@@ -1,20 +1,12 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import "leaflet/dist/leaflet.css";
+import "leaflet.markercluster/dist/MarkerCluster.css";
+import "leaflet.markercluster/dist/MarkerCluster.Default.css";
+import { FamilyMapProvider } from "@/contexts/FamilyMapContext";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
-
-export const metadata: Metadata = {
+export const metadata = {
   title: "Family History Map",
-  description: "Interactive family history map visualization",
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_BASE_URL ||
-      "https://westis.github.io/family-history-map"
-  ),
+  description: "Visualize your family history on a map",
 };
 
 export default function RootLayout({
@@ -23,8 +15,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body>{children}</body>
+    <html lang="en">
+      <body>
+        <FamilyMapProvider>{children}</FamilyMapProvider>
+      </body>
     </html>
   );
 }
