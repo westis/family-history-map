@@ -2,7 +2,7 @@ import { Person, Event } from "@/types/family-map";
 
 const isClient = typeof window !== "undefined";
 
-const safeConsoleLog = (...args: any[]) => {
+const safeConsoleLog = (...args: unknown[]) => {
   if (isClient) {
     console.log(...args);
   }

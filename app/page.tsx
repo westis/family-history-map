@@ -1,5 +1,5 @@
-import FamilyMap from "@/components/FamilyMap";
+import ClientFamilyMap from "@/components/ClientFamilyMap";
 
 export default function Home() {
-  return <FamilyMap />;
+  return <ClientFamilyMap />;
 }
