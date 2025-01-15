@@ -6,9 +6,11 @@ let assetPrefix = "";
 let basePath = "";
 
 if (isGithubActions) {
-  const repo = process.env.GITHUB_REPOSITORY?.replace(/.*?\//, "");
-  assetPrefix = `/${repo}/`;
-  basePath = `/${repo}`;
+  basePath = "/family-history-map";
+  assetPrefix = "/family-history-map/";
+} else {
+  basePath = "";
+  assetPrefix = "";
 }
 
 const nextConfig: NextConfig = {
