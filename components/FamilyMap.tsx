@@ -415,7 +415,7 @@ export default function FamilyMap() {
         <MapContainer center={[56.85, 14]} zoom={7} className="h-full w-full">
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
           />
           <MarkerLayer
             events={filteredEvents}
