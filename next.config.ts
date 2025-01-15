@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: "export", // Enable static exports
+  basePath: "/family-history-map", // Replace with your repository name
+  images: {
+    unoptimized: true,
+  },
 };
 
 export default nextConfig;

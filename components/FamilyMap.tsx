@@ -51,8 +51,8 @@ interface Person {
 }
 
 const DefaultIcon = new Icon({
-  iconUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png",
+  iconUrl: "/family-history-map/marker-icon.png",
+  shadowUrl: "/family-history-map/marker-shadow.png",
   iconSize: [25, 41],
   iconAnchor: [12, 41],
 });
