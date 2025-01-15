@@ -1,7 +1,5 @@
-import ClientFamilyMap from "@/components/ClientFamilyMap";
-
-export const dynamic = "force-dynamic";
+import FamilyMap from "@/components/FamilyMap";
 
 export default function Home() {
-  return <ClientFamilyMap />;
+  return <FamilyMap />;
 }

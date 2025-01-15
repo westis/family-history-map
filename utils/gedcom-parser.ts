@@ -1,17 +1,9 @@
 import { Person, Event } from "@/types/family-map";
 
-const isClient = typeof window !== "undefined";
-
-const safeConsoleLog = (...args: unknown[]) => {
-  if (isClient) {
-    console.log(...args);
-  }
-};
-
 export const parseGEDCOM = (text: string): Person[] => {
-  safeConsoleLog("Starting GEDCOM parsing...");
+  console.log("Starting GEDCOM parsing...");
   const lines = text.split("\n");
-  safeConsoleLog(`Total lines to process: ${lines.length}`);
+  console.log(`Total lines to process: ${lines.length}`);
 
   const people: Person[] = [];
   const families: {
@@ -159,8 +151,8 @@ export const parseGEDCOM = (text: string): Person[] => {
     });
   });
 
-  safeConsoleLog(`Parsing complete. Found ${people.length} people`);
-  safeConsoleLog("Sample of parsed data:", people.slice(0, 2));
+  console.log(`Parsing complete. Found ${people.length} people`);
+  console.log("Sample of parsed data:", people.slice(0, 2));
 
   return people;
 };

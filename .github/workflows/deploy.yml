@@ -17,9 +17,6 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    environment: github-pages
-    env:
-      NEXT_PUBLIC_MAPTILER_KEY: ${{ secrets.NEXT_PUBLIC_MAPTILER_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,13 +31,6 @@ jobs:
 
       - name: Build
         run: npm run build
-
-      - name: Debug - List build output
-        run: |
-          echo "Contents of out directory:"
-          ls -la out/
-          echo "Contents of out/_next directory:"
-          ls -la out/_next/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
