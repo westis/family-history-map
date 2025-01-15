@@ -1,17 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "export", // Enable static exports
-  basePath: "/family-history-map", // Replace with your repository name
+  output: "export",
+  basePath: "/family-history-map",
   images: {
     unoptimized: true,
-  },
-  webpack: (config) => {
-    config.resolve.fallback = {
-      ...config.resolve.fallback,
-      fs: false,
-    };
-    return config;
   },
 };
 
