@@ -304,12 +304,7 @@ function get16Ancestors(
 }
 
 // Remove these from parseGEDCOM and move them to the component level
-const parseGEDCOM = async (
-  text: string,
-  setIsGeocoding: (value: boolean) => void,
-  setGeocodingProgress: (value: { processed: number; total: number }) => void,
-  setGeocodingReport: (report: GeocodingReport) => void
-): Promise<Person[]> => {
+const parseGEDCOM = async (text: string): Promise<Person[]> => {
   console.log("Starting GEDCOM parsing...");
   const lines = text.split("\n");
   console.log(`Total lines to process: ${lines.length}`);
@@ -328,81 +323,6 @@ const parseGEDCOM = async (
     children: string[];
   } | null = null;
   let currentEvent: Event | null = null;
-
-  // Update processEvents to use the passed setters
-  const processEvents = async (people: Person[]) => {
-    const placesToGeocode = new Set<string>();
-    const failedPlaces: string[] = [];
-
-    // Collect all unique places that need geocoding
-    people.forEach((person) => {
-      person.events.forEach((event) => {
-        if (
-          event.place !== "Unknown" &&
-          event.coordinates[0] === 0 &&
-          event.coordinates[1] === 0
-        ) {
-          placesToGeocode.add(event.place);
-        }
-      });
-    });
-
-    console.log(`Found ${placesToGeocode.size} places to geocode`);
-
-    // Geocode all places
-    const geocodedPlaces = new Map<string, [number, number]>();
-    let processed = 0;
-    let successCount = 0;
-
-    setIsGeocoding(true);
-    setGeocodingProgress({ processed: 0, total: placesToGeocode.size });
-
-    // Update progress reporting
-    for (const place of placesToGeocode) {
-      const coordinates = await geocodePlace(place);
-      if (coordinates) {
-        geocodedPlaces.set(place, coordinates);
-        successCount++;
-      } else {
-        failedPlaces.push(place);
-      }
-      processed++;
-      setGeocodingProgress({ processed, total: placesToGeocode.size });
-    }
-
-    setIsGeocoding(false);
-
-    // Generate report
-    setGeocodingReport({
-      failedPlaces,
-      totalAttempted: placesToGeocode.size,
-      successCount,
-    });
-
-    // Create a deep copy of people array to modify
-    const updatedPeople = people.map((person) => ({
-      ...person,
-      events: [...person.events],
-    }));
-
-    // Update coordinates in events
-    updatedPeople.forEach((person) => {
-      person.events.forEach((event) => {
-        if (
-          event.place !== "Unknown" &&
-          event.coordinates[0] === 0 &&
-          event.coordinates[1] === 0
-        ) {
-          const coordinates = geocodedPlaces.get(event.place);
-          if (coordinates) {
-            event.coordinates = coordinates;
-          }
-        }
-      });
-    });
-
-    return updatedPeople;
-  };
 
   lines.forEach((line) => {
     const parts = line.trim().split(/\s+/);
@@ -535,13 +455,7 @@ const parseGEDCOM = async (
     });
   });
 
-  // Then process events to add coordinates
-  const peopleWithCoordinates = await processEvents(people);
-
-  console.log(`Parsing complete. Found ${peopleWithCoordinates.length} people`);
-  console.log("Sample of parsed data:", peopleWithCoordinates.slice(0, 2));
-
-  return peopleWithCoordinates;
+  return people;
 };
 
 // Add the getRelationshipType function before MarkerLayer
@@ -1504,10 +1418,16 @@ export default function FamilyMap() {
   const [geocodingProgress, setGeocodingProgress] = useState({
     processed: 0,
     total: 0,
+    currentPlace: "",
   });
   // Add state for geocoding report
   const [geocodingReport, setGeocodingReport] =
     useState<GeocodingReport | null>(null);
+  // Add near other state declarations
+  const [placesToGeocode, setPlacesToGeocode] = useState<Set<string>>(
+    new Set()
+  );
+  const [isGeocodingCancelled, setIsGeocodingCancelled] = useState(false);
 
   // Update handleFileUpload to pass the state setters
   const handleFileUpload = async (
@@ -1526,17 +1446,24 @@ export default function FamilyMap() {
     reader.onload = async (e) => {
       try {
         const content = e.target?.result as string;
-        console.log("File content length:", content.length);
+        const parsedPeople = await parseGEDCOM(content);
 
-        const parsedPeople = await parseGEDCOM(
-          content,
-          setIsGeocoding,
-          setGeocodingProgress,
-          setGeocodingReport
-        );
-        console.log("Parsed people:", parsedPeople.length);
+        // After parsing, collect places that need geocoding
+        const placesNeedingCoordinates = new Set<string>();
+        parsedPeople.forEach((person) => {
+          person.events.forEach((event) => {
+            if (
+              event.place !== "Unknown" &&
+              event.coordinates[0] === 0 &&
+              event.coordinates[1] === 0
+            ) {
+              placesNeedingCoordinates.add(event.place);
+            }
+          });
+        });
 
         setPeople(parsedPeople);
+        setPlacesToGeocode(placesNeedingCoordinates);
 
         // Set year range based on data
         const years = parsedPeople.flatMap((p) =>
@@ -1548,10 +1475,7 @@ export default function FamilyMap() {
         if (years.length) {
           const minYear = Math.min(...years);
           const maxYear = Math.max(...years);
-          console.log("Setting year range:", minYear, maxYear);
           setYearRange([minYear, maxYear]);
-        } else {
-          console.log("No valid years found in the data");
         }
       } catch (error) {
         console.error("Error parsing GEDCOM:", error);
@@ -1702,6 +1626,90 @@ export default function FamilyMap() {
     }
   }, [rootPerson, people]);
 
+  const handleGeocoding = async () => {
+    if (placesToGeocode.size === 0) return;
+
+    setIsGeocoding(true);
+    setIsGeocodingCancelled(false);
+    setGeocodingProgress({
+      processed: 0,
+      total: placesToGeocode.size,
+      currentPlace: "",
+    });
+
+    const geocodedPlaces = new Map<string, [number, number]>();
+    const failedPlaces: string[] = [];
+    let processed = 0;
+    let successCount = 0;
+
+    const placesArray = Array.from(placesToGeocode);
+
+    for (let i = 0; i < placesArray.length; i++) {
+      const place = placesArray[i];
+
+      // Update current place being processed
+      setGeocodingProgress({
+        processed,
+        total: placesToGeocode.size,
+        currentPlace: place,
+      });
+
+      if (isGeocodingCancelled) {
+        console.log("Geocoding cancelled");
+        // Just close the dialog and keep the markers we've added so far
+        setIsGeocoding(false);
+        // Keep remaining places in placesToGeocode for later
+        const remainingPlaces = new Set(placesArray.slice(i));
+        setPlacesToGeocode(remainingPlaces);
+        return;
+      }
+
+      try {
+        const coordinates = await geocodePlace(place);
+        if (coordinates) {
+          geocodedPlaces.set(place, coordinates);
+          successCount++;
+
+          // Update people with new coordinates immediately - this will cause
+          // the map to update with new markers in real-time
+          setPeople((currentPeople) => {
+            const updatedPeople = currentPeople.map((person) => ({
+              ...person,
+              events: person.events.map((event) => {
+                if (event.place === place) {
+                  return { ...event, coordinates };
+                }
+                return event;
+              }),
+            }));
+            return updatedPeople;
+          });
+        } else {
+          failedPlaces.push(place);
+        }
+      } catch (error) {
+        console.error(`Error geocoding ${place}:`, error);
+        failedPlaces.push(place);
+      }
+
+      processed++;
+    }
+
+    setIsGeocoding(false);
+
+    // Only show report if we actually tried to geocode places and weren't cancelled
+    if (processed > 0 && !isGeocodingCancelled) {
+      setGeocodingReport({
+        failedPlaces,
+        totalAttempted: placesToGeocode.size,
+        successCount,
+      });
+    }
+
+    // Update places that still need geocoding
+    setPlacesToGeocode(new Set(failedPlaces));
+  };
+
   return (
     <div className="h-screen w-screen overflow-hidden relative">
       {/* Info button */}
@@ -1755,6 +1763,22 @@ export default function FamilyMap() {
                 </div>
               </label>
             </div>
+
+            {/* Add geocoding button here */}
+            {placesToGeocode.size > 0 && (
+              <div>
+                <Button
+                  onClick={handleGeocoding}
+                  disabled={isGeocoding}
+                  className="w-full"
+                >
+                  {isGeocoding ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : null}
+                  Geocode {placesToGeocode.size} places
+                </Button>
+              </div>
+            )}
 
             {/* Root person selection */}
             <div className="space-y-2">
@@ -2478,7 +2502,7 @@ export default function FamilyMap() {
 
       {isGeocoding && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
-          <Card className="w-[300px] p-4">
+          <Card className="w-[400px] p-4">
             <h3 className="font-semibold mb-2">Geocoding Places</h3>
             <div className="space-y-2">
               <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -2492,10 +2516,27 @@ export default function FamilyMap() {
                   }}
                 />
               </div>
-              <div className="text-sm text-gray-600">
-                Processing {geocodingProgress.processed} of{" "}
-                {geocodingProgress.total} places
+              <div className="text-sm space-y-1">
+                <div className="text-gray-600">
+                  Processing {geocodingProgress.processed} of{" "}
+                  {geocodingProgress.total} places
+                </div>
+                {geocodingProgress.currentPlace && (
+                  <div className="text-gray-500 truncate">
+                    Currently processing: {geocodingProgress.currentPlace}
+                  </div>
+                )}
               </div>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsGeocodingCancelled(true);
+                  setIsGeocoding(false); // Close dialog immediately
+                }}
+                className="w-full mt-2"
+              >
+                Cancel
+              </Button>
             </div>
           </Card>
         </div>
