@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
+import { geocodePlace } from "@/lib/geocoding";
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
@@ -81,6 +82,13 @@ interface AncestorFilter {
 interface RelationshipInfo {
   relationship: string;
   type: "ancestor" | "descendant" | "root" | "none";
+}
+
+// Add this interface near the other interfaces
+interface GeocodingReport {
+  failedPlaces: string[];
+  totalAttempted: number;
+  successCount: number;
 }
 
 // Update the calculateRelationships function
@@ -295,7 +303,13 @@ function get16Ancestors(
   );
 }
 
-const parseGEDCOM = (text: string): Person[] => {
+// Remove these from parseGEDCOM and move them to the component level
+const parseGEDCOM = async (
+  text: string,
+  setIsGeocoding: (value: boolean) => void,
+  setGeocodingProgress: (value: { processed: number; total: number }) => void,
+  setGeocodingReport: (report: GeocodingReport) => void
+): Promise<Person[]> => {
   console.log("Starting GEDCOM parsing...");
   const lines = text.split("\n");
   console.log(`Total lines to process: ${lines.length}`);
@@ -314,6 +328,81 @@ const parseGEDCOM = (text: string): Person[] => {
     children: string[];
   } | null = null;
   let currentEvent: Event | null = null;
+
+  // Update processEvents to use the passed setters
+  const processEvents = async (people: Person[]) => {
+    const placesToGeocode = new Set<string>();
+    const failedPlaces: string[] = [];
+
+    // Collect all unique places that need geocoding
+    people.forEach((person) => {
+      person.events.forEach((event) => {
+        if (
+          event.place !== "Unknown" &&
+          event.coordinates[0] === 0 &&
+          event.coordinates[1] === 0
+        ) {
+          placesToGeocode.add(event.place);
+        }
+      });
+    });
+
+    console.log(`Found ${placesToGeocode.size} places to geocode`);
+
+    // Geocode all places
+    const geocodedPlaces = new Map<string, [number, number]>();
+    let processed = 0;
+    let successCount = 0;
+
+    setIsGeocoding(true);
+    setGeocodingProgress({ processed: 0, total: placesToGeocode.size });
+
+    // Update progress reporting
+    for (const place of placesToGeocode) {
+      const coordinates = await geocodePlace(place);
+      if (coordinates) {
+        geocodedPlaces.set(place, coordinates);
+        successCount++;
+      } else {
+        failedPlaces.push(place);
+      }
+      processed++;
+      setGeocodingProgress({ processed, total: placesToGeocode.size });
+    }
+
+    setIsGeocoding(false);
+
+    // Generate report
+    setGeocodingReport({
+      failedPlaces,
+      totalAttempted: placesToGeocode.size,
+      successCount,
+    });
+
+    // Create a deep copy of people array to modify
+    const updatedPeople = people.map((person) => ({
+      ...person,
+      events: [...person.events],
+    }));
+
+    // Update coordinates in events
+    updatedPeople.forEach((person) => {
+      person.events.forEach((event) => {
+        if (
+          event.place !== "Unknown" &&
+          event.coordinates[0] === 0 &&
+          event.coordinates[1] === 0
+        ) {
+          const coordinates = geocodedPlaces.get(event.place);
+          if (coordinates) {
+            event.coordinates = coordinates;
+          }
+        }
+      });
+    });
+
+    return updatedPeople;
+  };
 
   lines.forEach((line) => {
     const parts = line.trim().split(/\s+/);
@@ -446,10 +535,13 @@ const parseGEDCOM = (text: string): Person[] => {
     });
   });
 
-  console.log(`Parsing complete. Found ${people.length} people`);
-  console.log("Sample of parsed data:", people.slice(0, 2));
+  // Then process events to add coordinates
+  const peopleWithCoordinates = await processEvents(people);
 
-  return people;
+  console.log(`Parsing complete. Found ${peopleWithCoordinates.length} people`);
+  console.log("Sample of parsed data:", peopleWithCoordinates.slice(0, 2));
+
+  return peopleWithCoordinates;
 };
 
 // Add the getRelationshipType function before MarkerLayer
@@ -1350,6 +1442,14 @@ function InfoPanel({
   );
 }
 
+// Add this function near the top of FamilyMap component
+const clearGeocodingCache = () => {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("geocoding-cache");
+    console.log("Geocoding cache cleared");
+  }
+};
+
 export default function FamilyMap() {
   const [people, setPeople] = useState<Person[]>([]);
   const [yearRange, setYearRange] = useState([1800, 2024]);
@@ -1399,8 +1499,20 @@ export default function FamilyMap() {
   const [currentLocationIndex, setCurrentLocationIndex] = useState(0);
   // Add this state near the other useState declarations:
   const [infoOpen, setInfoOpen] = useState(false);
+  // Move state declarations here with the other states
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [geocodingProgress, setGeocodingProgress] = useState({
+    processed: 0,
+    total: 0,
+  });
+  // Add state for geocoding report
+  const [geocodingReport, setGeocodingReport] =
+    useState<GeocodingReport | null>(null);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Update handleFileUpload to pass the state setters
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = event.target.files?.[0];
     if (!file) {
       console.log("No file selected");
@@ -1411,12 +1523,17 @@ export default function FamilyMap() {
 
     const reader = new FileReader();
 
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const content = e.target?.result as string;
         console.log("File content length:", content.length);
 
-        const parsedPeople = parseGEDCOM(content);
+        const parsedPeople = await parseGEDCOM(
+          content,
+          setIsGeocoding,
+          setGeocodingProgress,
+          setGeocodingReport
+        );
         console.log("Parsed people:", parsedPeople.length);
 
         setPeople(parsedPeople);
@@ -1623,10 +1740,19 @@ export default function FamilyMap() {
                   accept=".ged"
                   className="hidden"
                 />
-                <Button onClick={handleUploadClick}>
-                  <FileUp className="w-4 h-4 mr-2" />
-                  Upload GEDCOM
-                </Button>
+                <div className="flex gap-2">
+                  <Button onClick={handleUploadClick}>
+                    <FileUp className="w-4 h-4 mr-2" />
+                    Upload GEDCOM
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={clearGeocodingCache}
+                    title="Clear cached geocoding results"
+                  >
+                    Clear Cache
+                  </Button>
+                </div>
               </label>
             </div>
 
@@ -2348,6 +2474,102 @@ export default function FamilyMap() {
           onFilterChange={setAncestorFilter}
           setRelationFilter={setRelationFilter}
         />
+      )}
+
+      {isGeocoding && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
+          <Card className="w-[300px] p-4">
+            <h3 className="font-semibold mb-2">Geocoding Places</h3>
+            <div className="space-y-2">
+              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 transition-all duration-300"
+                  style={{
+                    width: `${
+                      (geocodingProgress.processed / geocodingProgress.total) *
+                      100
+                    }%`,
+                  }}
+                />
+              </div>
+              <div className="text-sm text-gray-600">
+                Processing {geocodingProgress.processed} of{" "}
+                {geocodingProgress.total} places
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Add report dialog */}
+      {geocodingReport && (
+        <Dialog
+          open={!!geocodingReport}
+          onOpenChange={() => setGeocodingReport(null)}
+        >
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Geocoding Report</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex justify-between text-sm">
+                <span>Total places attempted:</span>
+                <span className="font-medium">
+                  {geocodingReport.totalAttempted}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Successfully geocoded:</span>
+                <span className="font-medium text-green-600">
+                  {geocodingReport.successCount}(
+                  {Math.round(
+                    (geocodingReport.successCount /
+                      geocodingReport.totalAttempted) *
+                      100
+                  )}
+                  %)
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Failed to geocode:</span>
+                <span className="font-medium text-red-600">
+                  {geocodingReport.failedPlaces.length}(
+                  {Math.round(
+                    (geocodingReport.failedPlaces.length /
+                      geocodingReport.totalAttempted) *
+                      100
+                  )}
+                  %)
+                </span>
+              </div>
+
+              {geocodingReport.failedPlaces.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="font-medium mb-2">Failed Places:</h4>
+                  <div className="bg-gray-50 rounded-lg p-4 max-h-[300px] overflow-y-auto">
+                    <ul className="space-y-1">
+                      {geocodingReport.failedPlaces
+                        .sort()
+                        .map((place, index) => (
+                          <li key={index} className="text-sm text-gray-700">
+                            {place}
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 text-sm text-gray-500">
+                <p>
+                  Failed places could not be geocoded due to unclear or
+                  historical place names. You may want to manually review these
+                  locations.
+                </p>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
