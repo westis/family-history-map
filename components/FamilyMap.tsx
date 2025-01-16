@@ -19,7 +19,6 @@ import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import L from "leaflet";
-import { RangeSlider } from "@/components/ui/range-slider";
 import "leaflet.markercluster";
 import {
   Command,
@@ -62,6 +61,8 @@ import {
 } from "@/app/utils/ancestors";
 import { FileUpload } from "@/components/ui/control-panel/FileUpload";
 import { EventTypeFilter } from "@/components/ui/control-panel/EventTypeFilter";
+import { YearRangeFilter } from "@/components/ui/control-panel/YearRangeFilter";
+import { RelationshipFilter } from "@/components/ui/control-panel/RelationshipFilter";
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
@@ -420,7 +421,7 @@ function InfoPanel({
 
 export default function FamilyMap() {
   const [people, setPeople] = useState<Person[]>([]);
-  const [yearRange, setYearRange] = useState([1800, 2024]);
+  const [yearRange, setYearRange] = useState<[number, number]>([1800, 2024]);
   const [selectedPerson, setSelectedPerson] = useState<{
     person: Person;
     event: Event;
@@ -899,53 +900,14 @@ export default function FamilyMap() {
             />
 
             {/* Year range */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Year Range</label>
-              <RangeSlider
-                value={yearRange}
-                min={1500}
-                max={2024}
-                step={1}
-                onValueChange={setYearRange}
-              />
-              <div className="flex justify-between text-sm text-gray-600">
-                <span>{yearRange[0]}</span>
-                <span>{yearRange[1]}</span>
-              </div>
-            </div>
+            <YearRangeFilter value={yearRange} onChangeAction={setYearRange} />
 
             {/* Filter section - only show when root person is selected */}
             {rootPerson && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Filter Events</label>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant={relationFilter === "all" ? "default" : "outline"}
-                    onClick={() => setRelationFilter("all")}
-                  >
-                    All
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={
-                      relationFilter === "ancestors" ? "default" : "outline"
-                    }
-                    onClick={() => setRelationFilter("ancestors")}
-                  >
-                    Ancestors
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={
-                      relationFilter === "descendants" ? "default" : "outline"
-                    }
-                    onClick={() => setRelationFilter("descendants")}
-                  >
-                    Descendants
-                  </Button>
-                </div>
-              </div>
+              <RelationshipFilter
+                relationFilter={relationFilter}
+                onChangeAction={setRelationFilter}
+              />
             )}
 
             {rootPerson && (
