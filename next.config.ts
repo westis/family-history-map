@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  assetPrefix:
+    process.env.NODE_ENV === "production" ? "/family-history-map" : "",
+  trailingSlash: true,
 };
 
 export default nextConfig;

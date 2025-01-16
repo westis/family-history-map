@@ -3,13 +3,22 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileUp, Check, ChevronsUpDown, Loader2, X } from "lucide-react";
+import {
+  FileUp,
+  Check,
+  ChevronsUpDown,
+  Loader2,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Minus,
+} from "lucide-react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import L from "leaflet";
-import { Icon } from "leaflet";
 import { RangeSlider } from "@/components/ui/range-slider";
 import "leaflet.markercluster";
 import {
@@ -27,6 +36,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+import { usePathname } from "next/navigation";
 
 interface Event {
   type: "BIRT" | "DEAT" | "RESI";
@@ -49,15 +60,6 @@ interface Person {
   spouses: string[]; // Array of spouse IDs
   relationship?: string; // Relationship to root person
 }
-
-const DefaultIcon = new Icon({
-  iconUrl: "/family-history-map/marker-icon.png",
-  shadowUrl: "/family-history-map/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
-
-L.Marker.prototype.options.icon = DefaultIcon;
 
 function calculateRelationships(people: Person[], rootId: string) {
   const peopleMap = new Map(people.map((p) => [p.id, p]));
@@ -342,41 +344,37 @@ function MarkerLayer({
   activeCoordinates: [number, number] | null;
 }) {
   const map = useMap();
-  const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const markersRef = useRef<Map<string, L.CircleMarker>>(new Map());
 
   useEffect(() => {
-    // Create a function to get marker icon based on event type and active state
-    const getMarkerIcon = (event: Event, isActive: boolean | null) => {
-      // Convert null to false for the isActive parameter
+    // Replace getMarkerIcon with getMarkerOptions
+    const getMarkerOptions = (event: Event, isActive: boolean | null) => {
       const active = isActive ?? false;
-
       const color =
         event.type === "BIRT"
-          ? "green"
+          ? "#15803d" // green-700
           : event.type === "DEAT"
-          ? "red"
-          : "blue";
+          ? "#b91c1c" // red-700
+          : "#1d4ed8"; // blue-700
 
-      return new Icon({
-        iconUrl: active
-          ? `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`
-          : `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
-        shadowUrl:
-          "https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png",
-        iconSize: active ? [35, 57] : [25, 41],
-        iconAnchor: active ? [17, 57] : [12, 41],
-      });
+      return {
+        radius: active ? 10 : 8,
+        fillColor: color,
+        color: "white",
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.9,
+        className: "hover:cursor-pointer",
+      };
     };
 
     const markers = new L.MarkerClusterGroup({
       spiderfyOnMaxZoom: true,
       zoomToBoundsOnClick: true,
       disableClusteringAtZoom: 10,
-      maxClusterRadius: 30,
+      maxClusterRadius: 40,
       iconCreateFunction: function (cluster: L.MarkerCluster) {
         const markers = cluster.getAllChildMarkers();
-
-        // Create a Set of unique locations using coordinates as key
         const uniqueLocations = new Set(
           markers.map((marker) => {
             const coords = marker.getLatLng();
@@ -385,7 +383,6 @@ function MarkerLayer({
         );
 
         const count = uniqueLocations.size;
-
         let size = "small";
         if (count > 100) size = "large";
         else if (count > 10) size = "medium";
@@ -398,7 +395,6 @@ function MarkerLayer({
       },
     });
 
-    // Store markers ref in a variable for cleanup
     const currentMarkersRef = markersRef.current;
 
     events.forEach(({ person, event }) => {
@@ -407,15 +403,15 @@ function MarkerLayer({
         activeCoordinates[0] === event.coordinates[0] &&
         activeCoordinates[1] === event.coordinates[1];
 
-      const marker = L.marker([event.coordinates[0], event.coordinates[1]], {
-        icon: getMarkerIcon(event, isActive),
-        zIndexOffset: isActive ? 1000 : 0, // Make active marker appear on top
-      }).on("click", (e) => {
+      // Replace L.marker with L.circleMarker
+      const marker = L.circleMarker(
+        [event.coordinates[0], event.coordinates[1]],
+        getMarkerOptions(event, isActive)
+      ).on("click", (e) => {
         L.DomEvent.stopPropagation(e);
         onSelect(person, event);
       });
 
-      // Store reference to marker
       const coordKey = `${event.coordinates[0]},${event.coordinates[1]}`;
       markersRef.current.set(coordKey, marker);
       markers.addLayer(marker);
@@ -423,19 +419,20 @@ function MarkerLayer({
 
     map.addLayer(markers);
 
-    // Handle active marker
     if (activeCoordinates) {
       const coordKey = `${activeCoordinates[0]},${activeCoordinates[1]}`;
       const marker = markersRef.current.get(coordKey);
       if (marker) {
-        marker.setZIndexOffset(1000); // Ensure active marker is on top
-        map.setView(activeCoordinates, 14); // Zoom to the active marker
+        marker.setStyle({
+          pane: "markerPane",
+          radius: 10,
+          fillOpacity: 1,
+        });
+        map.setView(activeCoordinates, 14);
 
-        // Add bounce animation class
         const icon = marker.getElement();
         if (icon) {
           icon.classList.add("marker-bounce");
-          // Remove animation after 2 seconds
           setTimeout(() => {
             icon.classList.remove("marker-bounce");
           }, 2000);
@@ -512,6 +509,13 @@ type EventType = "BIRT" | "DEAT" | "RESI";
 type RelationFilter = "all" | "ancestors" | "descendants";
 
 export default function FamilyMap() {
+  const pathname = usePathname();
+  const basePath =
+    process.env.NODE_ENV === "production" ? "/family-history-map" : "";
+
+  // Update the tile layer URL to use the basePath
+  const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
+
   const [people, setPeople] = useState<Person[]>([]);
   const [yearRange, setYearRange] = useState([1800, 2024]);
   const [selectedPerson, setSelectedPerson] = useState<{
@@ -541,6 +545,8 @@ export default function FamilyMap() {
   const [activeCoordinates, setActiveCoordinates] = useState<
     [number, number] | null
   >(null);
+  const [isControlsCollapsed, setIsControlsCollapsed] = useState(false);
+  const mapRef = useRef<L.Map | null>(null);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -702,218 +708,297 @@ export default function FamilyMap() {
 
   return (
     <div className="h-screen w-screen overflow-hidden relative">
-      {/* Controls */}
-      <div className="absolute top-4 left-4 z-[1000] bg-white p-4 rounded-lg shadow-lg space-y-4 mb-8">
-        <label className="block">
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            accept=".ged"
-            className="hidden"
-          />
-          <Button onClick={handleUploadClick}>
-            <FileUp className="w-4 h-4 mr-2" />
-            Upload GEDCOM
-          </Button>
-        </label>
-
-        <div className="w-48">
-          <RangeSlider
-            value={yearRange}
-            min={1500}
-            max={2024}
-            step={1}
-            onValueChange={setYearRange}
-            className="my-4"
-          />
-          <div className="flex justify-between mt-2 text-sm text-gray-600">
-            <span>{yearRange[0]}</span>
-            <span>{yearRange[1]}</span>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label className="text-sm text-gray-600">Event Types:</label>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant={
-                selectedEventTypes.includes("BIRT") ? "default" : "outline"
-              }
-              onClick={() => {
-                setSelectedEventTypes((prev) =>
-                  prev.includes("BIRT")
-                    ? prev.filter((t) => t !== "BIRT")
-                    : [...prev, "BIRT"]
-                );
-              }}
-              className="flex items-center gap-1"
-            >
-              <div
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: "#38a169" }}
+      {/* Controls panel */}
+      <div
+        className={cn(
+          "absolute top-4 right-4 z-[1000] transition-transform duration-200",
+          isControlsCollapsed
+            ? "translate-x-[calc(100%-3rem)]"
+            : "bg-white rounded-lg shadow-lg"
+        )}
+      >
+        {/* Panel content */}
+        <div className={cn("p-4", isControlsCollapsed ? "hidden" : "")}>
+          <div className="space-y-4">
+            <label className="block">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept=".ged"
+                className="hidden"
               />
-              Birth
-            </Button>
-            <Button
-              size="sm"
-              variant={
-                selectedEventTypes.includes("DEAT") ? "default" : "outline"
-              }
-              onClick={() => {
-                setSelectedEventTypes((prev) =>
-                  prev.includes("DEAT")
-                    ? prev.filter((t) => t !== "DEAT")
-                    : [...prev, "DEAT"]
-                );
-              }}
-              className="flex items-center gap-1"
-            >
-              <div
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: "#e53e3e" }}
-              />
-              Death
-            </Button>
-            <Button
-              size="sm"
-              variant={
-                selectedEventTypes.includes("RESI") ? "default" : "outline"
-              }
-              onClick={() => {
-                setSelectedEventTypes((prev) =>
-                  prev.includes("RESI")
-                    ? prev.filter((t) => t !== "RESI")
-                    : [...prev, "RESI"]
-                );
-              }}
-              className="flex items-center gap-1"
-            >
-              <div
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: "#3182ce" }}
-              />
-              Living
-            </Button>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label className="text-sm text-gray-600">Show Relations:</label>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant={relationFilter === "all" ? "default" : "outline"}
-              onClick={() => setRelationFilter("all")}
-              disabled={!rootPerson}
-            >
-              All
-            </Button>
-            <Button
-              size="sm"
-              variant={relationFilter === "ancestors" ? "default" : "outline"}
-              onClick={() => setRelationFilter("ancestors")}
-              disabled={!rootPerson}
-            >
-              Ancestors
-            </Button>
-            <Button
-              size="sm"
-              variant={relationFilter === "descendants" ? "default" : "outline"}
-              onClick={() => setRelationFilter("descendants")}
-              disabled={!rootPerson}
-            >
-              Descendants
-            </Button>
-          </div>
-        </div>
-
-        <div className="w-48">
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="w-full justify-between">
-                {rootPerson
-                  ? people.find((p) => p.id === rootPerson)?.name || "Unknown"
-                  : "Choose Root Person..."}
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              <Button onClick={handleUploadClick}>
+                <FileUp className="w-4 h-4 mr-2" />
+                Upload GEDCOM
               </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Choose Person for Root</DialogTitle>
-              </DialogHeader>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <Command className="rounded-lg border shadow-md">
-                    <CommandInput
-                      placeholder="Search people..."
-                      value={searchTerm}
-                      onValueChange={setSearchTerm}
-                    />
-                    <CommandList className="max-h-[300px] overflow-y-auto">
-                      <CommandEmpty>No person found.</CommandEmpty>
-                      <CommandGroup>
-                        {filteredPeople.map((person) => (
-                          <CommandItem
-                            key={person.id}
-                            value={person.name}
-                            className="cursor-pointer hover:bg-accent pointer-events-auto"
-                            onSelect={() => {
-                              setRootPerson(person.id);
-                              setSearchTerm("");
-                              setDialogOpen(false);
-                            }}
-                            disabled={isCalculating}
-                          >
-                            <div
-                              className="flex items-center gap-2 w-full"
-                              onClick={() => {
-                                setRootPerson(person.id);
-                                setSearchTerm("");
-                              }}
-                            >
-                              {rootPerson === person.id && (
-                                <Check className="h-4 w-4 text-primary shrink-0" />
-                              )}
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  {person.name}
-                                  {isCalculating &&
-                                    rootPerson === person.id && (
-                                      <Loader2 className="w-4 h-4 animate-spin" />
-                                    )}
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                  {person.events
-                                    .filter(
-                                      (e) => e.type === "BIRT" && e.date.year
-                                    )
-                                    .map((e) => e.date.year)
-                                    .join(", ")}
-                                </div>
-                              </div>
-                            </div>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </div>
-                <div className="flex flex-col gap-2 min-w-[120px]">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setRootPerson(null);
-                      setDialogOpen(false);
-                    }}
-                  >
-                    Clear Selection
-                  </Button>
-                </div>
+            </label>
+
+            <div className="w-48">
+              <RangeSlider
+                value={yearRange}
+                min={1500}
+                max={2024}
+                step={1}
+                onValueChange={setYearRange}
+                className="my-4"
+              />
+              <div className="flex justify-between mt-2 text-sm text-gray-600">
+                <span>{yearRange[0]}</span>
+                <span>{yearRange[1]}</span>
               </div>
-            </DialogContent>
-          </Dialog>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-sm text-gray-600">Event Types:</label>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={
+                    selectedEventTypes.includes("BIRT") ? "default" : "outline"
+                  }
+                  onClick={() => {
+                    setSelectedEventTypes((prev) =>
+                      prev.includes("BIRT")
+                        ? prev.filter((t) => t !== "BIRT")
+                        : [...prev, "BIRT"]
+                    );
+                  }}
+                  className="flex items-center gap-1"
+                >
+                  <div
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: "#38a169" }}
+                  />
+                  Birth
+                </Button>
+                <Button
+                  size="sm"
+                  variant={
+                    selectedEventTypes.includes("DEAT") ? "default" : "outline"
+                  }
+                  onClick={() => {
+                    setSelectedEventTypes((prev) =>
+                      prev.includes("DEAT")
+                        ? prev.filter((t) => t !== "DEAT")
+                        : [...prev, "DEAT"]
+                    );
+                  }}
+                  className="flex items-center gap-1"
+                >
+                  <div
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: "#e53e3e" }}
+                  />
+                  Death
+                </Button>
+                <Button
+                  size="sm"
+                  variant={
+                    selectedEventTypes.includes("RESI") ? "default" : "outline"
+                  }
+                  onClick={() => {
+                    setSelectedEventTypes((prev) =>
+                      prev.includes("RESI")
+                        ? prev.filter((t) => t !== "RESI")
+                        : [...prev, "RESI"]
+                    );
+                  }}
+                  className="flex items-center gap-1"
+                >
+                  <div
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: "#3182ce" }}
+                  />
+                  Living
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-sm text-gray-600">Show Relations:</label>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={relationFilter === "all" ? "default" : "outline"}
+                  onClick={() => setRelationFilter("all")}
+                  disabled={!rootPerson}
+                >
+                  All
+                </Button>
+                <Button
+                  size="sm"
+                  variant={
+                    relationFilter === "ancestors" ? "default" : "outline"
+                  }
+                  onClick={() => setRelationFilter("ancestors")}
+                  disabled={!rootPerson}
+                >
+                  Ancestors
+                </Button>
+                <Button
+                  size="sm"
+                  variant={
+                    relationFilter === "descendants" ? "default" : "outline"
+                  }
+                  onClick={() => setRelationFilter("descendants")}
+                  disabled={!rootPerson}
+                >
+                  Descendants
+                </Button>
+              </div>
+            </div>
+
+            <div className="w-48">
+              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between">
+                    {rootPerson
+                      ? people.find((p) => p.id === rootPerson)?.name ||
+                        "Unknown"
+                      : "Choose Root Person..."}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Choose Person for Root</DialogTitle>
+                  </DialogHeader>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <Command className="rounded-lg border shadow-md">
+                        <CommandInput
+                          placeholder="Search people..."
+                          value={searchTerm}
+                          onValueChange={setSearchTerm}
+                        />
+                        <CommandList className="max-h-[300px] overflow-y-auto">
+                          <CommandEmpty>No person found.</CommandEmpty>
+                          <CommandGroup>
+                            {filteredPeople.map((person) => (
+                              <CommandItem
+                                key={person.id}
+                                value={person.name}
+                                className="cursor-pointer hover:bg-accent pointer-events-auto"
+                                onSelect={() => {
+                                  setRootPerson(person.id);
+                                  setSearchTerm("");
+                                  setDialogOpen(false);
+                                }}
+                                disabled={isCalculating}
+                              >
+                                <div
+                                  className="flex items-center gap-2 w-full"
+                                  onClick={() => {
+                                    setRootPerson(person.id);
+                                    setSearchTerm("");
+                                  }}
+                                >
+                                  {rootPerson === person.id && (
+                                    <Check className="h-4 w-4 text-primary shrink-0" />
+                                  )}
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      {person.name}
+                                      {isCalculating &&
+                                        rootPerson === person.id && (
+                                          <Loader2 className="w-4 h-4 animate-spin" />
+                                        )}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {person.events
+                                        .filter(
+                                          (e) =>
+                                            e.type === "BIRT" && e.date.year
+                                        )
+                                        .map((e) => e.date.year)
+                                        .join(", ")}
+                                    </div>
+                                  </div>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </div>
+                    <div className="flex flex-col gap-2 min-w-[120px]">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setRootPerson(null);
+                          setDialogOpen(false);
+                        }}
+                      >
+                        Clear Selection
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+        </div>
+
+        {/* Collapse button at the bottom of the panel */}
+        <div
+          className={cn(
+            "border-t", // Add top border
+            isControlsCollapsed ? "hidden" : "" // Hide when collapsed
+          )}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsControlsCollapsed(!isControlsCollapsed)}
+            className="w-full h-8 rounded-none hover:bg-gray-50"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Expand button (only shown when collapsed) */}
+        {isControlsCollapsed && (
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={() => setIsControlsCollapsed(!isControlsCollapsed)}
+            className="absolute -left-10 top-0 h-10 w-10 bg-white shadow-lg rounded-l-lg border-r-0 flex items-center justify-center"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+        )}
+      </div>
+
+      {/* Keep only the bottom-right zoom controls */}
+      <div className="absolute bottom-8 right-4 z-[1000] bg-white rounded-lg shadow-lg">
+        <div className="flex flex-col gap-2 p-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const map = mapRef.current;
+              if (map) {
+                map.setZoom((map.getZoom() || 7) + 1);
+              }
+            }}
+            className="h-8 w-8 p-0"
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const map = mapRef.current;
+              if (map) {
+                map.setZoom((map.getZoom() || 7) - 1);
+              }
+            }}
+            className="h-8 w-8 p-0"
+          >
+            <Minus className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
@@ -922,10 +1007,16 @@ export default function FamilyMap() {
           Upload a GEDCOM file to view your family map
         </div>
       ) : (
-        <MapContainer center={[56.85, 14]} zoom={7} className="h-full w-full">
+        <MapContainer
+          center={[56.85, 14]}
+          zoom={7}
+          className="h-full w-full"
+          ref={mapRef}
+          zoomControl={false}
+        >
           <TileLayer
             attribution='<a href="https://www.maptiler.com/copyright/" target="_blank">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>'
-            url={`https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`}
+            url={tileLayerUrl}
             maxZoom={19}
             tileSize={256}
           />
@@ -942,141 +1033,96 @@ export default function FamilyMap() {
       )}
 
       {selectedPerson && (
-        <Card className="absolute bottom-12 left-4 p-4 max-w-md bg-white shadow-lg z-[1000] max-h-[50vh] overflow-y-auto">
+        <Card
+          className={cn(
+            "absolute left-0 bottom-0 bg-white shadow-lg z-[1000] overflow-y-auto rounded-none",
+            "min-h-[300px]",
+            "max-h-[calc(100vh-2rem)]",
+            "w-[400px]"
+          )}
+        >
           <div className="flex flex-col h-full">
-            <div className="flex justify-between items-start sticky top-0 z-10 bg-white pb-2 border-b mb-4">
-              <div className="bg-white">
-                <h3 className="font-bold text-xl">
-                  {selectedPerson.person.name}
-                </h3>
-                {getRelationship(selectedPerson.person.id) && (
-                  <div className="text-sm text-blue-600">
-                    {getRelationship(selectedPerson.person.id)}
+            {/* Header section */}
+            <div className="sticky top-0 z-10 bg-white border-b mb-2">
+              <div className="p-4">
+                {/* Name and close button row */}
+                <div className="flex justify-between items-start gap-4">
+                  <h3 className="font-bold text-xl text-gray-900">
+                    {selectedPerson.person.name}
+                  </h3>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setSelectedPerson(null)}
+                    className="h-8 w-8 p-0 -mt-1 -mr-1"
+                  >
+                    <X className="h-4 w-4" />
+                    <span className="sr-only">Close</span>
+                  </Button>
+                </div>
+
+                {/* Relationship and Set as Root row */}
+                <div className="flex justify-between items-center mt-1">
+                  {getRelationship(selectedPerson.person.id) && (
+                    <div className="text-sm font-medium text-blue-600">
+                      {getRelationship(selectedPerson.person.id)}
+                    </div>
+                  )}
+                  <div className="ml-auto">
+                    {rootPerson !== selectedPerson.person.id ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setRootPerson(selectedPerson.person.id)}
+                        disabled={isCalculating}
+                        className="whitespace-nowrap text-xs"
+                      >
+                        {isCalculating ? (
+                          <>
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            Calculating...
+                          </>
+                        ) : (
+                          "Set as Root"
+                        )}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setRootPerson(null)}
+                        disabled={isCalculating}
+                        className="whitespace-nowrap text-xs"
+                      >
+                        {isCalculating ? (
+                          <>
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            Calculating...
+                          </>
+                        ) : (
+                          "Clear Root"
+                        )}
+                      </Button>
+                    )}
                   </div>
-                )}
-              </div>
-              <div className="flex gap-2">
-                {rootPerson !== selectedPerson.person.id ? (
-                  <Button
-                    size="sm"
-                    onClick={() => setRootPerson(selectedPerson.person.id)}
-                    disabled={isCalculating}
-                  >
-                    {isCalculating ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Calculating...
-                      </>
-                    ) : (
-                      "Set as Root"
-                    )}
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setRootPerson(null)}
-                    disabled={isCalculating}
-                  >
-                    {isCalculating ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Calculating...
-                      </>
-                    ) : (
-                      "Clear Root"
-                    )}
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setSelectedPerson(null)}
-                  className="h-8 w-8 p-0"
-                >
-                  <X className="h-4 w-4" />
-                  <span className="sr-only">Close</span>
-                </Button>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-4">
-              {/* Birth event if exists */}
-              {selectedPerson.person.events
-                .filter((event) => event.type === "BIRT")
-                .map((event, index) => (
-                  <div
-                    key={index}
-                    className={`p-3 rounded-lg ${
-                      event === selectedPerson.event
-                        ? "bg-blue-50 border border-blue-100"
-                        : "hover:bg-gray-50"
-                    }`}
-                  >
-                    <div className="font-medium text-blue-900">Birth</div>
-                    <div className="text-sm text-gray-600">
-                      {event.date.from}
-                      {event.date.to && ` to ${event.date.to}`}
-                    </div>
-                    <div className="flex justify-between items-center text-sm mt-1">
-                      <span className="text-gray-700">{event.place}</span>
-                      {event.coordinates[0] !== 0 &&
-                        event.coordinates[1] !== 0 && (
-                          <LocationButton
-                            coordinates={event.coordinates}
-                            onClick={() =>
-                              handleLocationClick(event.coordinates, 12)
-                            }
-                          />
-                        )}
-                    </div>
-                  </div>
-                ))}
-
-              {/* Death event if exists */}
-              {selectedPerson.person.events
-                .filter((event) => event.type === "DEAT")
-                .map((event, index) => (
-                  <div
-                    key={index}
-                    className={`p-3 rounded-lg ${
-                      event === selectedPerson.event
-                        ? "bg-blue-50 border border-blue-100"
-                        : "hover:bg-gray-50"
-                    }`}
-                  >
-                    <div className="font-medium text-blue-900">Death</div>
-                    <div className="text-sm text-gray-600">
-                      {event.date.from}
-                      {event.date.to && ` to ${event.date.to}`}
-                    </div>
-                    <div className="flex justify-between items-center text-sm mt-1">
-                      <span className="text-gray-700">{event.place}</span>
-                      {event.coordinates[0] !== 0 &&
-                        event.coordinates[1] !== 0 && (
-                          <LocationButton
-                            coordinates={event.coordinates}
-                            onClick={() =>
-                              handleLocationClick(event.coordinates, 12)
-                            }
-                          />
-                        )}
-                    </div>
-                  </div>
-                ))}
-
+            {/* Content with padding */}
+            <div className="space-y-4 px-4 pb-4">
               {/* Parents section */}
               {selectedPerson.person.parents.length > 0 && (
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <h4 className="font-medium mb-2">Parents</h4>
-                  <div className="space-y-1">
+                <div className="bg-gray-50 p-2 rounded-lg">
+                  <h4 className="font-medium text-gray-900 mb-2">Parents</h4>
+                  <div className="space-y-0">
                     {selectedPerson.person.parents.map((parentId) => {
                       const parent = people.find((p) => p.id === parentId);
                       return (
                         parent && (
                           <button
                             key={parentId}
-                            className="text-sm text-blue-600 hover:underline block"
+                            className="w-full text-left px-2 py-1 hover:bg-gray-100 rounded-md text-blue-600 hover:text-blue-800"
                             onClick={() => {
                               const parentEvents = parent.events.filter(
                                 (e) =>
@@ -1101,63 +1147,135 @@ export default function FamilyMap() {
                 </div>
               )}
 
-              {/* Residence events */}
-              {selectedPerson.person.events.some(
-                (event) => event.type === "RESI"
-              ) && (
-                <div>
-                  <h4 className="font-medium mb-2">Places of Residence</h4>
-                  <div className="space-y-2">
-                    {selectedPerson.person.events
-                      .filter((event) => event.type === "RESI")
-                      .sort((a, b) => {
-                        if (a.date.year === null) return 1;
-                        if (b.date.year === null) return -1;
-                        return a.date.year - b.date.year;
-                      })
-                      .map((event, index) => (
-                        <div
-                          key={index}
-                          className={`p-2 rounded-lg ${
-                            event === selectedPerson.event
-                              ? "bg-blue-50 border border-blue-100"
-                              : "hover:bg-gray-50"
-                          }`}
-                        >
-                          <div className="text-sm text-gray-600">
-                            {event.date.from}
-                            {event.date.to && ` to ${event.date.to}`}
+              {/* Events section */}
+              <div className="space-y-2">
+                {/* Birth event */}
+                {selectedPerson.person.events
+                  .filter((event) => event.type === "BIRT")
+                  .map((event, index) => (
+                    <div
+                      key={index}
+                      className={cn(
+                        "p-3 rounded-lg border transition-colors",
+                        event === selectedPerson.event
+                          ? "bg-blue-100 border-blue-300 shadow-sm"
+                          : "hover:bg-gray-50 border-transparent"
+                      )}
+                    >
+                      <div className="font-medium text-blue-900">Birth</div>
+                      <div className="text-sm text-gray-600">
+                        {event.date.from}
+                        {event.date.to && ` to ${event.date.to}`}
+                      </div>
+                      <div className="flex justify-between items-center text-sm mt-1">
+                        <span className="text-gray-700">{event.place}</span>
+                        {event.coordinates[0] !== 0 &&
+                          event.coordinates[1] !== 0 && (
+                            <LocationButton
+                              coordinates={event.coordinates}
+                              onClick={() =>
+                                handleLocationClick(event.coordinates, 12)
+                              }
+                            />
+                          )}
+                      </div>
+                    </div>
+                  ))}
+
+                {/* Death event */}
+                {selectedPerson.person.events
+                  .filter((event) => event.type === "DEAT")
+                  .map((event, index) => (
+                    <div
+                      key={index}
+                      className={cn(
+                        "p-3 rounded-lg border transition-colors",
+                        event === selectedPerson.event
+                          ? "bg-blue-100 border-blue-300 shadow-sm"
+                          : "hover:bg-gray-50 border-transparent"
+                      )}
+                    >
+                      <div className="font-medium text-blue-900">Death</div>
+                      <div className="text-sm text-gray-600">
+                        {event.date.from}
+                        {event.date.to && ` to ${event.date.to}`}
+                      </div>
+                      <div className="flex justify-between items-center text-sm mt-1">
+                        <span className="text-gray-700">{event.place}</span>
+                        {event.coordinates[0] !== 0 &&
+                          event.coordinates[1] !== 0 && (
+                            <LocationButton
+                              coordinates={event.coordinates}
+                              onClick={() =>
+                                handleLocationClick(event.coordinates, 12)
+                              }
+                            />
+                          )}
+                      </div>
+                    </div>
+                  ))}
+
+                {/* Residence events */}
+                {selectedPerson.person.events.some(
+                  (event) => event.type === "RESI"
+                ) && (
+                  <div>
+                    <h4 className="font-medium mb-2">Places of Residence</h4>
+                    <div className="space-y-2">
+                      {selectedPerson.person.events
+                        .filter((event) => event.type === "RESI")
+                        .sort((a, b) => {
+                          if (a.date.year === null) return 1;
+                          if (b.date.year === null) return -1;
+                          return a.date.year - b.date.year;
+                        })
+                        .map((event, index) => (
+                          <div
+                            key={index}
+                            className={cn(
+                              "p-3 rounded-lg border transition-colors",
+                              event === selectedPerson.event
+                                ? "bg-blue-100 border-blue-300 shadow-sm"
+                                : "hover:bg-gray-50 border-transparent"
+                            )}
+                          >
+                            <div className="text-sm text-gray-600">
+                              {event.date.from}
+                              {event.date.to && ` to ${event.date.to}`}
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-gray-700">
+                                {event.place}
+                              </span>
+                              {event.coordinates[0] !== 0 &&
+                                event.coordinates[1] !== 0 && (
+                                  <LocationButton
+                                    coordinates={event.coordinates}
+                                    onClick={() =>
+                                      handleLocationClick(event.coordinates, 12)
+                                    }
+                                  />
+                                )}
+                            </div>
                           </div>
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-gray-700">{event.place}</span>
-                            {event.coordinates[0] !== 0 &&
-                              event.coordinates[1] !== 0 && (
-                                <LocationButton
-                                  coordinates={event.coordinates}
-                                  onClick={() =>
-                                    handleLocationClick(event.coordinates, 12)
-                                  }
-                                />
-                              )}
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Children section */}
               {selectedPerson.person.children.length > 0 && (
                 <div className="bg-gray-50 p-3 rounded-lg">
-                  <h4 className="font-medium mb-2">Children</h4>
-                  <div className="space-y-1">
+                  <h4 className="font-medium text-gray-900 mb-2">Children</h4>
+                  <div className="space-y-2">
                     {selectedPerson.person.children.map((childId) => {
                       const child = people.find((p) => p.id === childId);
                       return (
                         child && (
                           <button
                             key={childId}
-                            className="text-sm text-blue-600 hover:underline block"
+                            className="w-full text-left px-2 py-1 hover:bg-gray-100 rounded-md text-blue-600 hover:text-blue-800"
                             onClick={() => {
                               const childEvents = child.events.filter(
                                 (e) =>
