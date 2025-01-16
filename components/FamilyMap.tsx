@@ -4,7 +4,6 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  FileUp,
   Check,
   ChevronsUpDown,
   Loader2,
@@ -61,7 +60,7 @@ import {
   getAncestorPath,
   getAncestorGroupInfo,
 } from "@/app/utils/ancestors";
-import { parseGEDCOM } from "@/app/utils/gedcom";
+import { FileUpload } from "@/components/ui/control-panel/FileUpload";
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
@@ -418,14 +417,6 @@ function InfoPanel({
   );
 }
 
-// Add this function near the top of FamilyMap component
-const clearGeocodingCache = () => {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem("geocoding-cache");
-    console.log("Geocoding cache cleared");
-  }
-};
-
 export default function FamilyMap() {
   const [people, setPeople] = useState<Person[]>([]);
   const [yearRange, setYearRange] = useState([1800, 2024]);
@@ -433,7 +424,6 @@ export default function FamilyMap() {
     person: Person;
     event: Event;
   } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [rootPerson, setRootPerson] = useState<string | null>(null);
   const [relationships, setRelationships] = useState<
     Map<string, RelationshipInfo>
@@ -491,70 +481,6 @@ export default function FamilyMap() {
   );
   // Add a ref to track if geocoding should continue
   const geocodingRef = useRef({ shouldContinue: true });
-
-  // Update handleFileUpload to pass the state setters
-  const handleFileUpload = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      console.log("No file selected");
-      return;
-    }
-
-    console.log("File selected:", file.name);
-
-    const reader = new FileReader();
-
-    reader.onload = async (e) => {
-      try {
-        const content = e.target?.result as string;
-        const parsedPeople = await parseGEDCOM(content);
-
-        // After parsing, collect places that need geocoding
-        const placesNeedingCoordinates = new Set<string>();
-        parsedPeople.forEach((person) => {
-          person.events.forEach((event) => {
-            if (
-              event.place !== "Unknown" &&
-              event.coordinates[0] === 0 &&
-              event.coordinates[1] === 0
-            ) {
-              placesNeedingCoordinates.add(event.place);
-            }
-          });
-        });
-
-        setPeople(parsedPeople);
-        setPlacesToGeocode(placesNeedingCoordinates);
-
-        // Set year range based on data
-        const years = parsedPeople.flatMap((p) =>
-          p.events
-            .map((e) => e.date.year)
-            .filter((y): y is number => y !== null)
-        );
-
-        if (years.length) {
-          const minYear = Math.min(...years);
-          const maxYear = Math.max(...years);
-          setYearRange([minYear, maxYear]);
-        }
-      } catch (error) {
-        console.error("Error parsing GEDCOM:", error);
-      }
-    };
-
-    reader.onerror = (error) => {
-      console.error("Error reading file:", error);
-    };
-
-    reader.readAsText(file);
-  };
-
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
 
   // Update filteredEvents to include relation filtering
   const filteredEvents = React.useMemo(() => {
@@ -805,30 +731,18 @@ export default function FamilyMap() {
         <div className={cn("p-4", isControlsCollapsed ? "hidden" : "")}>
           <div className="space-y-6">
             {/* File upload */}
-            <div>
-              <label className="block">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileUpload}
-                  accept=".ged"
-                  className="hidden"
-                />
-                <div className="flex gap-2">
-                  <Button onClick={handleUploadClick}>
-                    <FileUp className="w-4 h-4 mr-2" />
-                    Upload GEDCOM
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={clearGeocodingCache}
-                    title="Clear cached geocoding results"
-                  >
-                    Clear Cache
-                  </Button>
-                </div>
-              </label>
-            </div>
+            <FileUpload
+              onUploadAction={setPeople}
+              onYearRangeUpdateAction={(minYear, maxYear) =>
+                setYearRange([minYear, maxYear])
+              }
+              onClearCacheAction={() => {
+                if (typeof window !== "undefined") {
+                  localStorage.removeItem("geocoding-cache");
+                  console.log("Geocoding cache cleared");
+                }
+              }}
+            />
 
             {/* Geocoding section */}
             {placesToGeocode.size > 0 && (
