@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -89,6 +89,20 @@ interface GeocodingReport {
   failedPlaces: string[];
   totalAttempted: number;
   successCount: number;
+}
+
+// Add this interface near the top with other interfaces
+interface AncestorFilterPanelProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  ancestors: AncestorInfo[];
+  filter: AncestorFilter;
+  onFilterChange: (filter: AncestorFilter) => void;
+  setRelationFilter: (filter: RelationFilter) => void;
+  people: Person[];
+  relationships: Map<string, RelationshipInfo>;
+  ahnentafelNumbers: Map<string, number[]>;
+  onSelectPerson: (person: Person) => void;
 }
 
 // Update the calculateRelationships function
@@ -189,16 +203,22 @@ function calculateRelationships(
       }
 
       if (nextPerson.children.includes(currentId)) {
-        // Going up to parent
+        // Going up to parent - use parent's sex
         relationshipParts.push(nextPerson.sex === "F" ? "m" : "f");
       } else if (currentPerson.children.includes(path[i])) {
-        // Going down to child
+        // Going down to child - use child's sex
         relationshipParts.push(nextPerson.sex === "F" ? "d" : "s");
       }
       currentId = path[i];
     }
 
-    return relationshipParts.join(" ");
+    // Join with spaces between pairs
+    let result = "";
+    relationshipParts.forEach((part, i) => {
+      if (i > 0 && i % 2 === 0) result += " ";
+      result += part;
+    });
+    return result;
   }
 
   people.forEach((person) => {
@@ -255,9 +275,24 @@ function calculateAhnentafelNumbers(
     }
 
     // Process parents (if any)
-    person.parents.forEach((parentId, index) => {
-      processAncestor(parentId, ahnNumber * 2 + index);
-    });
+    const parents = person.parents;
+    if (parents.length === 2) {
+      // If we have both parents, use their actual sex to determine Ahnentafel numbers
+      const father = peopleMap.get(parents[0]);
+      const mother = peopleMap.get(parents[1]);
+      if (father?.sex === "M") {
+        processAncestor(parents[0], ahnNumber * 2);
+        processAncestor(parents[1], ahnNumber * 2 + 1);
+      } else if (mother?.sex === "F") {
+        processAncestor(parents[1], ahnNumber * 2);
+        processAncestor(parents[0], ahnNumber * 2 + 1);
+      }
+    } else {
+      // If we don't have both parents, process them in order
+      parents.forEach((parentId, index) => {
+        processAncestor(parentId, ahnNumber * 2 + index);
+      });
+    }
   }
 
   // Start with the root person as 1
@@ -919,27 +954,28 @@ type EventType = "BIRT" | "DEAT" | "RESI";
 type RelationFilter = "all" | "ancestors" | "descendants";
 
 // Add this helper function
-function getAncestorPath(num: number): string {
-  // For numbers 16-31 (converted to 1-16), get the path
-  const paths: Record<number, string> = {
-    1: "ff ff",
-    2: "ff fm",
-    3: "ff mf",
-    4: "ff mm",
-    5: "fm ff",
-    6: "fm fm",
-    7: "fm mf",
-    8: "fm mm",
-    9: "mf ff",
-    10: "mf fm",
-    11: "mf mf",
-    12: "mf mm",
-    13: "mm ff",
-    14: "mm fm",
-    15: "mm mf",
-    16: "mm mm",
-  };
-  return paths[num] || "";
+function getAncestorPath(
+  num: number,
+  people: Person[],
+  relationships: Map<string, RelationshipInfo>,
+  ahnentafelNumbers: Map<string, number[]>
+): string {
+  // Convert back to Ahnentafel number (16-31)
+  const ahnNum = num + 15;
+
+  // Find the person with this Ahnentafel number
+  const person = people.find((p) => {
+    const numbers = ahnentafelNumbers.get(p.id) || [];
+    return numbers.includes(ahnNum);
+  });
+
+  if (person) {
+    // Use the already calculated relationship path
+    const relationship = relationships.get(person.id);
+    return relationship?.relationship || "";
+  }
+
+  return ""; // Fallback if person not found
 }
 
 // Update the Ancestor Groups section in the person card
@@ -1025,38 +1061,6 @@ interface LocationPerson {
   events: Event[];
 }
 
-// Add this helper to format multiple positions
-function formatAncestorLabel(ancestor: AncestorInfo): string {
-  // Get the lowest number (main group number)
-  const mainNumber = Math.min(...ancestor.numbers);
-  const path = getAncestorPath(mainNumber);
-
-  // Get birth and death years
-  const birthYear = ancestor.birthYear;
-  const deathYear = ancestor.deathYear;
-  const years =
-    birthYear || deathYear ? `, ${birthYear || "?"}-${deathYear || "?"}` : "";
-
-  // Format as "01 - ff ff (Bengt Olsson, 1759-1812)"
-  const mainLabel = `${mainNumber.toString().padStart(2, "0")} - ${path} (${
-    ancestor.name
-  }${years})`;
-
-  // If there are additional numbers, add them as a suffix with just the numbers
-  const additionalNumbers = ancestor.numbers
-    .filter((n) => n !== mainNumber)
-    .sort((a, b) => a - b);
-
-  if (additionalNumbers.length > 0) {
-    const additionalNums = additionalNumbers
-      .map((n) => n.toString().padStart(2, "0"))
-      .join(", ");
-    return `${mainLabel} (also ${additionalNums})`;
-  }
-
-  return mainLabel;
-}
-
 // Replace Draggable implementation with custom dragging
 function AncestorFilterPanel({
   open,
@@ -1065,14 +1069,11 @@ function AncestorFilterPanel({
   filter,
   onFilterChange,
   setRelationFilter,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  ancestors: AncestorInfo[];
-  filter: AncestorFilter;
-  onFilterChange: (filter: AncestorFilter) => void;
-  setRelationFilter: (filter: RelationFilter) => void;
-}) {
+  people, // Add this prop
+  relationships, // Add this prop
+  ahnentafelNumbers, // Add this prop
+  onSelectPerson, // Add this new prop
+}: AncestorFilterPanelProps) {
   console.log("AncestorFilterPanel render:", { open });
 
   // Initialize position to center of screen
@@ -1105,14 +1106,17 @@ function AncestorFilterPanel({
     }
   };
 
-  const handleMouseMove = (e: MouseEvent) => {
-    if (isDragging) {
-      setPosition({
-        x: e.clientX - dragStartPos.current.x,
-        y: e.clientY - dragStartPos.current.y,
-      });
-    }
-  };
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (isDragging) {
+        setPosition({
+          x: e.clientX - dragStartPos.current.x,
+          y: e.clientY - dragStartPos.current.y,
+        });
+      }
+    },
+    [isDragging]
+  );
 
   const handleMouseUp = () => {
     setIsDragging(false);
@@ -1127,50 +1131,90 @@ function AncestorFilterPanel({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging]);
+  }, [isDragging, handleMouseMove]);
 
   // Define AncestorCheckbox inside the panel to access filter props
-  const AncestorCheckbox = ({ ancestor }: { ancestor: AncestorInfo }) => (
-    <div className="flex items-center space-x-2 mb-2">
-      <Checkbox
-        id={`ancestor-${ancestor.numbers[0]}`}
-        checked={ancestor.numbers.some((n) => filter.selectedAncestors.has(n))}
-        onCheckedChange={(checked) => {
-          const newSelected = new Set(filter.selectedAncestors);
-          ancestor.numbers.forEach((n) => {
-            if (checked) {
-              newSelected.add(n);
-            } else {
-              newSelected.delete(n);
-            }
-          });
-          onFilterChange({
-            ...filter,
-            selectedAncestors: newSelected,
-          });
-        }}
-      />
-      <label
-        htmlFor={`ancestor-${ancestor.numbers[0]}`}
-        className="text-sm whitespace-nowrap"
-      >
-        {formatAncestorLabel(ancestor)}
-      </label>
-    </div>
-  );
+  const AncestorCheckbox = ({ ancestor }: { ancestor: AncestorInfo }) => {
+    // Find the person object for this ancestor
+    const person = people.find((p) =>
+      ahnentafelNumbers
+        .get(p.id)
+        ?.some((n) => ancestor.numbers.includes(n - 15))
+    );
+
+    // Format years separately
+    const years =
+      ancestor.birthYear || ancestor.deathYear
+        ? `, ${ancestor.birthYear || "?"}-${ancestor.deathYear || "?"}`
+        : "";
+
+    // Get relationship path
+    const path = getAncestorPath(
+      Math.min(...ancestor.numbers),
+      people,
+      relationships,
+      ahnentafelNumbers
+    );
+
+    return (
+      <div className="flex items-center space-x-2 mb-2">
+        <Checkbox
+          id={`ancestor-${ancestor.numbers[0]}`}
+          checked={ancestor.numbers.some((n) =>
+            filter.selectedAncestors.has(n)
+          )}
+          onCheckedChange={(checked) => {
+            const newSelected = new Set(filter.selectedAncestors);
+            ancestor.numbers.forEach((n) => {
+              if (checked) {
+                newSelected.add(n);
+              } else {
+                newSelected.delete(n);
+              }
+            });
+            onFilterChange({
+              ...filter,
+              selectedAncestors: newSelected,
+            });
+          }}
+        />
+        <label
+          htmlFor={`ancestor-${ancestor.numbers[0]}`}
+          className="text-sm whitespace-nowrap flex items-center"
+        >
+          <span>
+            {ancestor.numbers[0].toString().padStart(2, "0")} - {path} (
+          </span>
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              if (person) {
+                onSelectPerson(person);
+                onOpenChange(false);
+              }
+            }}
+            className="text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            {ancestor.name}
+          </button>
+          <span>{years})</span>
+        </label>
+      </div>
+    );
+  };
 
   // Group ancestors by paternal/maternal lines (keep existing grouping code)
-  const paternalFather = ancestors.filter((a) =>
-    a.numbers.some((n) => n >= 1 && n <= 4)
+  const paternalFather = ancestors.filter((ancestor: AncestorInfo) =>
+    ancestor.numbers.some((n: number) => n >= 1 && n <= 4)
   );
-  const paternalMother = ancestors.filter((a) =>
-    a.numbers.some((n) => n >= 5 && n <= 8)
+  const paternalMother = ancestors.filter((ancestor: AncestorInfo) =>
+    ancestor.numbers.some((n: number) => n >= 5 && n <= 8)
   );
-  const maternalFather = ancestors.filter((a) =>
-    a.numbers.some((n) => n >= 9 && n <= 12)
+  const maternalFather = ancestors.filter((ancestor: AncestorInfo) =>
+    ancestor.numbers.some((n: number) => n >= 9 && n <= 12)
   );
-  const maternalMother = ancestors.filter((a) =>
-    a.numbers.some((n) => n >= 13 && n <= 16)
+  const maternalMother = ancestors.filter((ancestor: AncestorInfo) =>
+    ancestor.numbers.some((n: number) => n >= 13 && n <= 16)
   );
 
   if (!open) return null;
@@ -1427,7 +1471,8 @@ export default function FamilyMap() {
   const [placesToGeocode, setPlacesToGeocode] = useState<Set<string>>(
     new Set()
   );
-  const [isGeocodingCancelled, setIsGeocodingCancelled] = useState(false);
+  // Add a ref to track if geocoding should continue
+  const geocodingRef = useRef({ shouldContinue: true });
 
   // Update handleFileUpload to pass the state setters
   const handleFileUpload = async (
@@ -1630,7 +1675,8 @@ export default function FamilyMap() {
     if (placesToGeocode.size === 0) return;
 
     setIsGeocoding(true);
-    setIsGeocodingCancelled(false);
+    geocodingRef.current.shouldContinue = true;
+
     setGeocodingProgress({
       processed: 0,
       total: placesToGeocode.size,
@@ -1645,24 +1691,21 @@ export default function FamilyMap() {
     const placesArray = Array.from(placesToGeocode);
 
     for (let i = 0; i < placesArray.length; i++) {
+      // Check the ref instead of the state
+      if (!geocodingRef.current.shouldContinue) {
+        console.log("Geocoding cancelled");
+        const remainingPlaces = new Set(placesArray.slice(i));
+        setPlacesToGeocode(remainingPlaces);
+        break; // Exit the loop
+      }
+
       const place = placesArray[i];
 
-      // Update current place being processed
       setGeocodingProgress({
         processed,
         total: placesToGeocode.size,
         currentPlace: place,
       });
-
-      if (isGeocodingCancelled) {
-        console.log("Geocoding cancelled");
-        // Just close the dialog and keep the markers we've added so far
-        setIsGeocoding(false);
-        // Keep remaining places in placesToGeocode for later
-        const remainingPlaces = new Set(placesArray.slice(i));
-        setPlacesToGeocode(remainingPlaces);
-        return;
-      }
 
       try {
         const coordinates = await geocodePlace(place);
@@ -1670,8 +1713,7 @@ export default function FamilyMap() {
           geocodedPlaces.set(place, coordinates);
           successCount++;
 
-          // Update people with new coordinates immediately - this will cause
-          // the map to update with new markers in real-time
+          // Update people with new coordinates immediately
           setPeople((currentPeople) => {
             const updatedPeople = currentPeople.map((person) => ({
               ...person,
@@ -1684,6 +1726,13 @@ export default function FamilyMap() {
             }));
             return updatedPeople;
           });
+
+          // Remove this place from placesToGeocode immediately
+          setPlacesToGeocode((current) => {
+            const updated = new Set(current);
+            updated.delete(place);
+            return updated;
+          });
         } else {
           failedPlaces.push(place);
         }
@@ -1695,19 +1744,18 @@ export default function FamilyMap() {
       processed++;
     }
 
+    // Clean up
     setIsGeocoding(false);
+    geocodingRef.current.shouldContinue = true; // Reset for next time
 
-    // Only show report if we actually tried to geocode places and weren't cancelled
-    if (processed > 0 && !isGeocodingCancelled) {
+    // Only show report if we weren't cancelled
+    if (processed > 0 && geocodingRef.current.shouldContinue) {
       setGeocodingReport({
         failedPlaces,
         totalAttempted: placesToGeocode.size,
         successCount,
       });
     }
-
-    // Update places that still need geocoding
-    setPlacesToGeocode(new Set(failedPlaces));
   };
 
   return (
@@ -1764,9 +1812,9 @@ export default function FamilyMap() {
               </label>
             </div>
 
-            {/* Add geocoding button here */}
+            {/* Geocoding section */}
             {placesToGeocode.size > 0 && (
-              <div>
+              <div className="space-y-2">
                 <Button
                   onClick={handleGeocoding}
                   disabled={isGeocoding}
@@ -1777,6 +1825,46 @@ export default function FamilyMap() {
                   ) : null}
                   Geocode {placesToGeocode.size} places
                 </Button>
+
+                {/* Progress indicator */}
+                {isGeocoding && (
+                  <div className="space-y-2 p-2 bg-gray-50 rounded-md">
+                    <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600 transition-all duration-300"
+                        style={{
+                          width: `${
+                            (geocodingProgress.processed /
+                              geocodingProgress.total) *
+                            100
+                          }%`,
+                        }}
+                      />
+                    </div>
+                    <div className="text-xs space-y-1">
+                      <div className="text-gray-600">
+                        Processing {geocodingProgress.processed} of{" "}
+                        {geocodingProgress.total} places
+                      </div>
+                      {geocodingProgress.currentPlace && (
+                        <div className="text-gray-500 truncate">
+                          {geocodingProgress.currentPlace}
+                        </div>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        geocodingRef.current.shouldContinue = false;
+                        setIsGeocoding(false);
+                      }}
+                      className="w-full"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2274,20 +2362,20 @@ export default function FamilyMap() {
                             key={parentId}
                             className="w-full text-left px-2 py-1 hover:bg-gray-100 rounded-md text-blue-600 hover:text-blue-800"
                             onClick={() => {
-                              const parentEvents = parent.events.filter(
-                                (e) =>
-                                  e.coordinates[0] !== 0 &&
-                                  e.coordinates[1] !== 0 &&
-                                  e.place !== "Unknown"
-                              );
-                              if (parentEvents.length > 0) {
-                                setSelectedPerson({
-                                  person: parent,
-                                  event: parentEvents[0],
-                                });
-                                // Clear any temporary highlight when selecting new person
-                                setTemporaryHighlight(null);
-                              }
+                              // Always show the parent card, even if no geocoded events
+                              setSelectedPerson({
+                                person: parent,
+                                // Try to find a geocoded event, but fall back to first event
+                                event:
+                                  parent.events.find(
+                                    (e) =>
+                                      e.coordinates[0] !== 0 &&
+                                      e.coordinates[1] !== 0 &&
+                                      e.place !== "Unknown"
+                                  ) || parent.events[0],
+                              });
+                              // Clear any temporary highlight when selecting new person
+                              setTemporaryHighlight(null);
                             }}
                           >
                             {parent.name}
@@ -2429,18 +2517,20 @@ export default function FamilyMap() {
                             key={childId}
                             className="w-full text-left px-2 py-1 hover:bg-gray-100 rounded-md text-blue-600 hover:text-blue-800"
                             onClick={() => {
-                              const childEvents = child.events.filter(
-                                (e) =>
-                                  e.coordinates[0] !== 0 &&
-                                  e.coordinates[1] !== 0 &&
-                                  e.place !== "Unknown"
-                              );
-                              if (childEvents.length > 0) {
-                                setSelectedPerson({
-                                  person: child,
-                                  event: childEvents[0],
-                                });
-                              }
+                              // Always show the child card, even if no geocoded events
+                              setSelectedPerson({
+                                person: child,
+                                // Try to find a geocoded event, but fall back to first event
+                                event:
+                                  child.events.find(
+                                    (e) =>
+                                      e.coordinates[0] !== 0 &&
+                                      e.coordinates[1] !== 0 &&
+                                      e.place !== "Unknown"
+                                  ) || child.events[0],
+                              });
+                              // Clear any temporary highlight when selecting new person
+                              setTemporaryHighlight(null);
                             }}
                           >
                             {child.name}
@@ -2473,7 +2563,12 @@ export default function FamilyMap() {
                       )}
                     >
                       {number.toString().padStart(2, "0")}-
-                      {getAncestorPath(number)}
+                      {getAncestorPath(
+                        number,
+                        people,
+                        relationships,
+                        ahnentafelNumbers
+                      )}
                       {type === "descendant" && (
                         <div className="text-xs text-gray-500 ml-1">
                           (descendant)
@@ -2497,49 +2592,22 @@ export default function FamilyMap() {
           filter={ancestorFilter}
           onFilterChange={setAncestorFilter}
           setRelationFilter={setRelationFilter}
-        />
-      )}
+          people={people}
+          relationships={relationships}
+          ahnentafelNumbers={ahnentafelNumbers}
+          onSelectPerson={(person) => {
+            // Find a valid event to show (geocoded event or first event)
+            const event =
+              person.events.find(
+                (e) =>
+                  e.coordinates[0] !== 0 &&
+                  e.coordinates[1] !== 0 &&
+                  e.place !== "Unknown"
+              ) || person.events[0];
 
-      {isGeocoding && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
-          <Card className="w-[400px] p-4">
-            <h3 className="font-semibold mb-2">Geocoding Places</h3>
-            <div className="space-y-2">
-              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-blue-600 transition-all duration-300"
-                  style={{
-                    width: `${
-                      (geocodingProgress.processed / geocodingProgress.total) *
-                      100
-                    }%`,
-                  }}
-                />
-              </div>
-              <div className="text-sm space-y-1">
-                <div className="text-gray-600">
-                  Processing {geocodingProgress.processed} of{" "}
-                  {geocodingProgress.total} places
-                </div>
-                {geocodingProgress.currentPlace && (
-                  <div className="text-gray-500 truncate">
-                    Currently processing: {geocodingProgress.currentPlace}
-                  </div>
-                )}
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setIsGeocodingCancelled(true);
-                  setIsGeocoding(false); // Close dialog immediately
-                }}
-                className="w-full mt-2"
-              >
-                Cancel
-              </Button>
-            </div>
-          </Card>
-        </div>
+            setSelectedPerson({ person, event });
+          }}
+        />
       )}
 
       {/* Add report dialog */}
