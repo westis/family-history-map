@@ -193,3 +193,42 @@
   background: none !important;
   border: none !important;
 }
+
+/* Add new marker relationship styles */
+.marker-ancestor {
+  animation: pulse-border-ancestor 2s infinite;
+}
+
+.marker-descendant {
+  animation: pulse-border-descendant 2s infinite;
+}
+
+@keyframes pulse-border-ancestor {
+  0% {
+    stroke-width: 3;
+    stroke: #eab308;
+  }
+  50% {
+    stroke-width: 4;
+    stroke: #fbbf24;
+  }
+  100% {
+    stroke-width: 3;
+    stroke: #eab308;
+  }
+}
+
+@keyframes pulse-border-descendant {
+  0% {
+    stroke-width: 3;
+    stroke: #8b5cf6;
+  }
+  50% {
+    stroke-width: 4;
+    stroke: #a78bfa;
+  }
+  100% {
+    stroke-width: 3;
+    stroke: #8b5cf6;
+  }
+}

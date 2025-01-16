@@ -37,6 +37,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
@@ -60,6 +61,19 @@ interface Person {
   children: string[]; // Array of children IDs
   spouses: string[]; // Array of spouse IDs
   relationship?: string; // Relationship to root person
+}
+
+interface AncestorInfo {
+  numbers: number[]; // Ahnentafel numbers this person represents
+  name: string;
+  birthYear?: number;
+  deathYear?: number;
+  selected?: boolean;
+}
+
+interface AncestorFilter {
+  showAncestorNumbers: boolean;
+  selectedAncestors: Set<number>;
 }
 
 function calculateRelationships(people: Person[], rootId: string) {
@@ -173,6 +187,74 @@ function calculateRelationships(people: Person[], rootId: string) {
   });
 
   return relationships;
+}
+
+function calculateAhnentafelNumbers(
+  people: Person[],
+  rootId: string
+): Map<string, number[]> {
+  const peopleMap = new Map(people.map((p) => [p.id, p]));
+  const numbers = new Map<string, number[]>();
+
+  function processAncestor(personId: string, ahnNumber: number) {
+    if (!personId) return;
+
+    const person = peopleMap.get(personId);
+    if (!person) return;
+
+    // Add this number to person's numbers
+    const currentNumbers = numbers.get(personId) || [];
+    if (!currentNumbers.includes(ahnNumber)) {
+      numbers.set(personId, [...currentNumbers, ahnNumber]);
+    }
+
+    // Process parents (if any)
+    person.parents.forEach((parentId, index) => {
+      processAncestor(parentId, ahnNumber * 2 + index);
+    });
+  }
+
+  // Start with the root person as 1
+  processAncestor(rootId, 1);
+  return numbers;
+}
+
+function get16Ancestors(
+  people: Person[],
+  rootId: string,
+  ahnentafelNumbers: Map<string, number[]>
+): AncestorInfo[] {
+  const ancestors: AncestorInfo[] = [];
+  const seen = new Set<string>();
+
+  // Only look for exact 2x great-grandparents (numbers 16-31)
+  people.forEach((person) => {
+    const numbers = ahnentafelNumbers.get(person.id) || [];
+    // Only include direct 2x great-grandparents
+    const ggNumbers = numbers
+      .filter((n) => n >= 16 && n <= 31)
+      .map((n) => n - 15); // Convert 16-31 to 1-16
+
+    if (ggNumbers.length > 0 && !seen.has(person.id)) {
+      seen.add(person.id);
+
+      // Get birth and death years from events
+      const birthEvent = person.events.find((e) => e.type === "BIRT");
+      const deathEvent = person.events.find((e) => e.type === "DEAT");
+
+      ancestors.push({
+        numbers: ggNumbers,
+        name: person.name,
+        birthYear: birthEvent?.date.year || undefined,
+        deathYear: deathEvent?.date.year || undefined,
+        selected: false,
+      });
+    }
+  });
+
+  return ancestors.sort(
+    (a, b) => Math.min(...a.numbers) - Math.min(...b.numbers)
+  );
 }
 
 const parseGEDCOM = (text: string): Person[] => {
@@ -334,38 +416,206 @@ const parseGEDCOM = (text: string): Person[] => {
   return people;
 };
 
-// Add this new component for handling markers
+// Add the getRelationshipType function before MarkerLayer
+function getRelationshipType(
+  personId: string,
+  rootPerson: string | null,
+  relationships: Map<string, string>,
+  temporaryHighlight: {
+    personId: string;
+    type: "ancestors" | "descendants" | "both" | null;
+  } | null
+): "ancestor" | "descendant" | "none" | null {
+  // If no root person is selected, return null (no relationship filtering)
+  if (!rootPerson) return null;
+
+  // First check temporary highlight
+  if (temporaryHighlight && temporaryHighlight.personId) {
+    const relationship = relationships.get(personId);
+    if (!relationship) return "none";
+
+    // Calculate relationship relative to the temporarily highlighted person
+    if (temporaryHighlight.type === "both") {
+      if (relationship.includes("far") || relationship.includes("mor"))
+        return "ancestor";
+      if (relationship.includes("son") || relationship.includes("dotter"))
+        return "descendant";
+    } else if (temporaryHighlight.type === "ancestors") {
+      return relationship.includes("far") || relationship.includes("mor")
+        ? "ancestor"
+        : "none";
+    } else if (temporaryHighlight.type === "descendants") {
+      return relationship.includes("son") || relationship.includes("dotter")
+        ? "descendant"
+        : "none";
+    }
+  }
+
+  // If no temporary highlight and root person is selected,
+  // return null instead of "none" to show markers normally
+  return null;
+}
+
+// Update MarkerLayer props
 function MarkerLayer({
   events,
   onSelect,
   activeCoordinates,
+  rootPerson,
+  relationships,
+  temporaryHighlight,
+  ahnentafelNumbers,
+  ancestorFilter,
 }: {
   events: { person: Person; event: Event }[];
   onSelect: (person: Person, event: Event) => void;
   activeCoordinates: [number, number] | null;
+  rootPerson: string | null;
+  relationships: Map<string, string>;
+  temporaryHighlight: {
+    personId: string;
+    type: "ancestors" | "descendants" | "both" | null;
+  } | null;
+  ahnentafelNumbers: Map<string, number[]>;
+  ancestorFilter: AncestorFilter;
 }) {
   const map = useMap();
-  const markersRef = useRef<Map<string, L.CircleMarker>>(new Map());
+  const markersRef = useRef<Map<string, L.CircleMarker | L.Marker>>(new Map());
+  const numberMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+
+  // Move getAllGGNumbers outside the effect and memoize it here
+  const getAllGGNumbers = React.useCallback((n: number): number[] => {
+    const result = new Set<number>();
+
+    // Walk up the tree to find all ancestor groups
+    let current = n;
+    while (current > 0) {
+      if (current >= 16 && current <= 31) {
+        result.add(current - 15); // Convert to 1-16
+      }
+      current = Math.floor(current / 2);
+    }
+
+    // If this is an ancestor of a 2x great-grandparent,
+    // include all descendant 2x great-grandparent groups
+    if (n > 0 && n < 16) {
+      // Calculate child numbers
+      const child1 = n * 2;
+      const child2 = n * 2 + 1;
+
+      // If children are 2x great-grandparents, add them
+      if (child1 >= 16 && child1 <= 31) result.add(child1 - 15);
+      if (child2 >= 16 && child2 <= 31) result.add(child2 - 15);
+
+      // If children are still ancestors of 2x great-grandparents, process them
+      if (child1 < 16) {
+        const stack = [child1];
+        while (stack.length > 0) {
+          const next = stack.pop()!;
+          const nextChild1 = next * 2;
+          const nextChild2 = next * 2 + 1;
+
+          if (nextChild1 >= 16 && nextChild1 <= 31) result.add(nextChild1 - 15);
+          if (nextChild2 >= 16 && nextChild2 <= 31) result.add(nextChild2 - 15);
+
+          if (nextChild1 < 16) stack.push(nextChild1);
+          if (nextChild2 < 16) stack.push(nextChild2);
+        }
+      }
+      if (child2 < 16) {
+        const stack = [child2];
+        while (stack.length > 0) {
+          const next = stack.pop()!;
+          const nextChild1 = next * 2;
+          const nextChild2 = next * 2 + 1;
+
+          if (nextChild1 >= 16 && nextChild1 <= 31) result.add(nextChild1 - 15);
+          if (nextChild2 >= 16 && nextChild2 <= 31) result.add(nextChild2 - 15);
+
+          if (nextChild1 < 16) stack.push(nextChild1);
+          if (nextChild2 < 16) stack.push(nextChild2);
+        }
+      }
+    }
+
+    return Array.from(result).sort((a, b) => a - b);
+  }, []);
 
   useEffect(() => {
-    // Replace getMarkerIcon with getMarkerOptions
-    const getMarkerOptions = (event: Event, isActive: boolean | null) => {
+    const getMarkerOptions = (
+      event: Event,
+      person: Person,
+      isActive: boolean | null,
+      relationshipType: "ancestor" | "descendant" | "none" | null,
+      numbers: number[]
+    ) => {
       const active = isActive ?? false;
-      const color =
+
+      // Base colors for event types
+      let baseColor =
         event.type === "BIRT"
-          ? "#15803d" // green-700
+          ? "#38a169" // green-600
           : event.type === "DEAT"
-          ? "#b91c1c" // red-700
-          : "#1d4ed8"; // blue-700
+          ? "#e53e3e" // red-600
+          : "#3182ce"; // blue-600
+
+      // If ancestor filter is active, color by ancestor group
+      if (ancestorFilter.showAncestorNumbers && numbers.length > 0) {
+        // Create color map for ancestor groups (2-3, 4-7, 8-15, 16-31)
+        const colorMap: Record<number, string> = {
+          2: "#f59e0b", // amber-500
+          3: "#10b981", // emerald-500
+          4: "#3b82f6", // blue-500
+          5: "#8b5cf6", // violet-500
+          6: "#ec4899", // pink-500
+          7: "#f43f5e", // rose-500
+          8: "#06b6d4", // cyan-500
+          9: "#14b8a6", // teal-500
+        };
+
+        const lowestNumber = Math.min(...numbers);
+        const groupNumber = Math.floor(lowestNumber / 2) * 2;
+        if (colorMap[groupNumber]) {
+          baseColor = colorMap[groupNumber];
+        }
+      }
+
+      // Modify opacity based on relationship
+      const opacity =
+        relationshipType === null
+          ? 0.9
+          : relationshipType === "none"
+          ? 0.15
+          : 0.9;
+
+      // Add border color based on relationship
+      const borderColor =
+        relationshipType === "ancestor"
+          ? "#eab308"
+          : relationshipType === "descendant"
+          ? "#8b5cf6"
+          : "#ffffff";
 
       return {
         radius: active ? 10 : 8,
-        fillColor: color,
-        color: "white",
-        weight: 2,
-        opacity: 1,
-        fillOpacity: 0.9,
-        className: "hover:cursor-pointer",
+        fillColor: baseColor,
+        color: borderColor,
+        weight: relationshipType === "none" ? 1 : 3,
+        opacity: relationshipType === "none" ? 0.15 : 1,
+        fillOpacity: opacity,
+        className: cn(
+          "hover:cursor-pointer",
+          relationshipType === "ancestor" && "marker-ancestor",
+          relationshipType === "descendant" && "marker-descendant",
+          ancestorFilter.showAncestorNumbers &&
+            numbers.length > 0 &&
+            "has-ancestor-number"
+        ),
+        // Add HTML for the marker with number inside
+        html:
+          ancestorFilter.showAncestorNumbers && numbers.length > 0
+            ? `<div class="marker-number">${Math.min(...numbers)}</div>`
+            : "",
       };
     };
 
@@ -376,8 +626,17 @@ function MarkerLayer({
       maxClusterRadius: 40,
       iconCreateFunction: function (cluster: L.MarkerCluster) {
         const markers = cluster.getAllChildMarkers();
+        const visibleMarkers = markers.filter((marker) => {
+          return (
+            marker.options &&
+            "fillOpacity" in marker.options &&
+            typeof marker.options.fillOpacity === "number" &&
+            marker.options.fillOpacity > 0.2
+          );
+        });
+
         const uniqueLocations = new Set(
-          markers.map((marker) => {
+          visibleMarkers.map((marker) => {
             const coords = marker.getLatLng();
             return `${coords.lat},${coords.lng}`;
           })
@@ -397,17 +656,55 @@ function MarkerLayer({
     });
 
     const currentMarkersRef = markersRef.current;
+    const currentNumberMarkersRef = numberMarkersRef.current;
 
+    // Clear all existing markers
+    currentMarkersRef.clear();
+    // Clear all existing number markers from the map
+    currentNumberMarkersRef.forEach((marker) => map.removeLayer(marker));
+    currentNumberMarkersRef.clear();
+
+    // First pass: collect all numbers for each location
+    const locationNumbers = new Map<string, Set<number>>();
+
+    // Process ALL events first to collect numbers
+    events.forEach(({ person, event }) => {
+      const coordKey = `${event.coordinates[0]},${event.coordinates[1]}`;
+      if (ancestorFilter.showAncestorNumbers) {
+        const numbers = ahnentafelNumbers.get(person.id) || [];
+        const ggGroups = numbers.flatMap(getAllGGNumbers);
+
+        if (ggGroups.length > 0) {
+          const existing = locationNumbers.get(coordKey) || new Set<number>();
+          ggGroups.forEach((n) => existing.add(n));
+          locationNumbers.set(coordKey, existing);
+        }
+      }
+    });
+
+    // Then create markers using the complete number sets
     events.forEach(({ person, event }) => {
       const isActive =
         activeCoordinates &&
         activeCoordinates[0] === event.coordinates[0] &&
         activeCoordinates[1] === event.coordinates[1];
 
-      // Replace L.marker with L.circleMarker
+      const relationshipType = getRelationshipType(
+        person.id,
+        rootPerson,
+        relationships,
+        temporaryHighlight
+      );
+
       const marker = L.circleMarker(
         [event.coordinates[0], event.coordinates[1]],
-        getMarkerOptions(event, isActive)
+        getMarkerOptions(
+          event,
+          person,
+          isActive,
+          relationshipType,
+          ahnentafelNumbers.get(person.id) || []
+        )
       ).on("click", (e) => {
         L.DomEvent.stopPropagation(e);
         onSelect(person, event);
@@ -416,6 +713,65 @@ function MarkerLayer({
       const coordKey = `${event.coordinates[0]},${event.coordinates[1]}`;
       markersRef.current.set(coordKey, marker);
       markers.addLayer(marker);
+
+      // Add the number marker if needed
+      if (ancestorFilter.showAncestorNumbers) {
+        const coordKey = `${event.coordinates[0]},${event.coordinates[1]}`;
+        const numbers = locationNumbers.get(coordKey);
+
+        // Only create one number marker per location
+        if (numbers && !numberMarkersRef.current.has(coordKey)) {
+          const sortedNumbers = [...numbers].sort((a, b) => a - b);
+
+          // Format numbers as ranges
+          const ranges: string[] = [];
+          let rangeStart = sortedNumbers[0];
+          let prev = rangeStart;
+
+          for (let i = 1; i <= sortedNumbers.length; i++) {
+            const current = sortedNumbers[i];
+            const isLastNumber = i === sortedNumbers.length;
+
+            if (isLastNumber || current !== prev + 1) {
+              // Add the current range or single number
+              ranges.push(
+                prev === rangeStart
+                  ? rangeStart.toString().padStart(2, "0")
+                  : `${rangeStart.toString().padStart(2, "0")}-${prev
+                      .toString()
+                      .padStart(2, "0")}`
+              );
+              if (!isLastNumber) {
+                rangeStart = current;
+                prev = current;
+              }
+            } else {
+              prev = current;
+            }
+          }
+
+          const numberDiv = L.divIcon({
+            html: `<div class="marker-number">${ranges.join(", ")}</div>`,
+            className: "marker-number-container",
+            iconSize: [120, 20],
+            iconAnchor: [-10, 15],
+          });
+
+          const numberMarker = L.marker(
+            [event.coordinates[0], event.coordinates[1]],
+            {
+              icon: numberDiv,
+              zIndexOffset: 1000,
+              interactive: false,
+            }
+          );
+
+          numberMarkersRef.current.set(coordKey, numberMarker);
+          if (ancestorFilter.showAncestorNumbers) {
+            numberMarker.addTo(map);
+          }
+        }
+      }
     });
 
     map.addLayer(markers);
@@ -423,7 +779,7 @@ function MarkerLayer({
     if (activeCoordinates) {
       const coordKey = `${activeCoordinates[0]},${activeCoordinates[1]}`;
       const marker = markersRef.current.get(coordKey);
-      if (marker) {
+      if (marker && marker instanceof L.CircleMarker) {
         marker.setStyle({
           pane: "markerPane",
           radius: 10,
@@ -444,8 +800,22 @@ function MarkerLayer({
     return () => {
       map.removeLayer(markers);
       currentMarkersRef.clear();
+      // Clear number markers on cleanup
+      currentNumberMarkersRef.forEach((marker) => map.removeLayer(marker));
+      currentNumberMarkersRef.clear();
     };
-  }, [map, events, onSelect, activeCoordinates]);
+  }, [
+    map,
+    events,
+    onSelect,
+    activeCoordinates,
+    rootPerson,
+    relationships,
+    temporaryHighlight,
+    ahnentafelNumbers,
+    ancestorFilter,
+    getAllGGNumbers,
+  ]);
 
   return null;
 }
@@ -509,6 +879,357 @@ type EventType = "BIRT" | "DEAT" | "RESI";
 // Add this type
 type RelationFilter = "all" | "ancestors" | "descendants";
 
+// Add this helper function
+function getAncestorPath(num: number): string {
+  // For numbers 16-31 (converted to 1-16), get the path
+  const paths: Record<number, string> = {
+    1: "ff ff",
+    2: "ff fm",
+    3: "ff mf",
+    4: "ff mm",
+    5: "fm ff",
+    6: "fm fm",
+    7: "fm mf",
+    8: "fm mm",
+    9: "mf ff",
+    10: "mf fm",
+    11: "mf mf",
+    12: "mf mm",
+    13: "mm ff",
+    14: "mm fm",
+    15: "mm mf",
+    16: "mm mm",
+  };
+  return paths[num] || "";
+}
+
+// Update the Ancestor Groups section in the person card
+function getAncestorGroupInfo(
+  personId: string,
+  ahnentafelNumbers: Map<string, number[]>,
+  relationships: Map<string, string>
+): { number: number; type: "ancestor" | "descendant" }[] {
+  const numbers = ahnentafelNumbers.get(personId) || [];
+  const relationship = relationships.get(personId);
+
+  // Helper to get all 2x great-grandparent groups for a number
+  function getAllGGNumbers(n: number): number[] {
+    const result: number[] = [];
+
+    // Walk up the tree to find all ancestor groups
+    let current = n;
+    while (current > 0) {
+      if (current >= 16 && current <= 31) {
+        result.push(current - 15); // Convert to 1-16
+      }
+      current = Math.floor(current / 2);
+    }
+
+    // If this is an ancestor of a 2x great-grandparent,
+    // include all descendant 2x great-grandparent groups
+    if (n > 0 && n < 16) {
+      const stack = [n * 2, n * 2 + 1]; // Start with immediate children
+      while (stack.length > 0) {
+        const next = stack.pop()!;
+        if (next >= 16 && next <= 31) {
+          result.push(next - 15);
+        } else if (next < 16) {
+          stack.push(next * 2, next * 2 + 1);
+        }
+      }
+    }
+
+    return [...new Set(result)];
+  }
+
+  // Get all groups this person belongs to
+  const allGGNumbers = numbers.flatMap(getAllGGNumbers);
+  if (allGGNumbers.length > 0) {
+    return [...new Set(allGGNumbers)]
+      .sort((a, b) => a - b)
+      .map((num) => ({
+        number: num,
+        type: "ancestor" as const,
+      }));
+  }
+
+  // For descendants, we need to check all possible ancestor paths
+  if (relationship?.includes("son") || relationship?.includes("dotter")) {
+    const ancestorGroups = new Set<number>();
+    for (const num of numbers) {
+      let current = num;
+      while (current > 0) {
+        if (current >= 16 && current <= 31) {
+          ancestorGroups.add(current - 15);
+        }
+        current = Math.floor(current / 2);
+      }
+    }
+
+    return Array.from(ancestorGroups)
+      .sort((a, b) => a - b)
+      .map((num) => ({
+        number: num,
+        type: "descendant" as const,
+      }));
+  }
+
+  return [];
+}
+
+// Add this interface
+interface LocationPerson {
+  person: Person;
+  events: Event[];
+}
+
+// Add this helper to format multiple positions
+function formatAncestorLabel(ancestor: AncestorInfo): string {
+  // Get the lowest number (main group number)
+  const mainNumber = Math.min(...ancestor.numbers);
+  const path = getAncestorPath(mainNumber);
+
+  // Get birth and death years
+  const birthYear = ancestor.birthYear;
+  const deathYear = ancestor.deathYear;
+  const years =
+    birthYear || deathYear ? `, ${birthYear || "?"}-${deathYear || "?"}` : "";
+
+  // Format as "01 - ff ff (Bengt Olsson, 1759-1812)"
+  const mainLabel = `${mainNumber.toString().padStart(2, "0")} - ${path} (${
+    ancestor.name
+  }${years})`;
+
+  // If there are additional numbers, add them as a suffix with just the numbers
+  const additionalNumbers = ancestor.numbers
+    .filter((n) => n !== mainNumber)
+    .sort((a, b) => a - b);
+
+  if (additionalNumbers.length > 0) {
+    const additionalNums = additionalNumbers
+      .map((n) => n.toString().padStart(2, "0"))
+      .join(", ");
+    return `${mainLabel} (also ${additionalNums})`;
+  }
+
+  return mainLabel;
+}
+
+// Replace Draggable implementation with custom dragging
+function AncestorFilterPanel({
+  open,
+  onOpenChange,
+  ancestors,
+  filter,
+  onFilterChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  ancestors: AncestorInfo[];
+  filter: AncestorFilter;
+  onFilterChange: (filter: AncestorFilter) => void;
+}) {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartPos = useRef({ x: 0, y: 0 });
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.target instanceof HTMLElement && e.target.closest(".drag-handle")) {
+      setIsDragging(true);
+      dragStartPos.current = {
+        x: e.clientX - position.x,
+        y: e.clientY - position.y,
+      };
+    }
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (isDragging) {
+      setPosition({
+        x: e.clientX - dragStartPos.current.x,
+        y: e.clientY - dragStartPos.current.y,
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging]);
+
+  // Define AncestorCheckbox inside the panel to access filter props
+  const AncestorCheckbox = ({ ancestor }: { ancestor: AncestorInfo }) => (
+    <div className="flex items-center space-x-2 mb-2">
+      <Checkbox
+        id={`ancestor-${ancestor.numbers[0]}`}
+        checked={ancestor.numbers.some((n) => filter.selectedAncestors.has(n))}
+        onCheckedChange={(checked) => {
+          const newSelected = new Set(filter.selectedAncestors);
+          ancestor.numbers.forEach((n) => {
+            if (checked) {
+              newSelected.add(n);
+            } else {
+              newSelected.delete(n);
+            }
+          });
+          onFilterChange({
+            ...filter,
+            selectedAncestors: newSelected,
+          });
+        }}
+      />
+      <label
+        htmlFor={`ancestor-${ancestor.numbers[0]}`}
+        className="text-sm whitespace-nowrap"
+      >
+        {formatAncestorLabel(ancestor)}
+      </label>
+    </div>
+  );
+
+  // Group ancestors by paternal/maternal lines (keep existing grouping code)
+  const paternalFather = ancestors.filter((a) =>
+    a.numbers.some((n) => n >= 1 && n <= 4)
+  );
+  const paternalMother = ancestors.filter((a) =>
+    a.numbers.some((n) => n >= 5 && n <= 8)
+  );
+  const maternalFather = ancestors.filter((a) =>
+    a.numbers.some((n) => n >= 9 && n <= 12)
+  );
+  const maternalMother = ancestors.filter((a) =>
+    a.numbers.some((n) => n >= 13 && n <= 16)
+  );
+
+  if (!open) return null;
+
+  return (
+    <Card
+      ref={panelRef}
+      className="absolute left-8 top-8 z-[1000] bg-white shadow-lg w-[800px]"
+      style={{
+        transform: `translate(${position.x}px, ${position.y}px)`,
+        cursor: isDragging ? "grabbing" : "default",
+      }}
+      onMouseDown={handleMouseDown}
+    >
+      <div className="p-4">
+        <div className="flex justify-between items-center mb-4 drag-handle cursor-grab border-b pb-2">
+          <div>
+            <h2 className="text-lg font-semibold">
+              2x Great-Grandparent Filter
+            </h2>
+            <p className="text-sm text-gray-500">
+              Drag this header to move the panel
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onOpenChange(false)}
+            className="h-8 w-8 p-0"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="show-numbers"
+              checked={filter.showAncestorNumbers}
+              onCheckedChange={(checked) =>
+                onFilterChange({
+                  ...filter,
+                  showAncestorNumbers: checked === true,
+                })
+              }
+            />
+            <label htmlFor="show-numbers">
+              Show ancestor numbers on markers
+            </label>
+          </div>
+
+          <div className="grid grid-cols-2 gap-8 max-h-[60vh] overflow-y-auto">
+            {/* Father's Line */}
+            <div className="space-y-4">
+              <h3 className="font-medium text-sm text-gray-900 bg-gray-100 p-2 rounded">
+                Father&apos;s Line
+              </h3>
+              <div className="space-y-4 pl-2">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">
+                    Father&apos;s Father&apos;s Line
+                  </h4>
+                  {paternalFather.map((ancestor) => (
+                    <AncestorCheckbox
+                      key={ancestor.numbers[0]}
+                      ancestor={ancestor}
+                    />
+                  ))}
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">
+                    Father&apos;s Mother&apos;s Line
+                  </h4>
+                  {paternalMother.map((ancestor) => (
+                    <AncestorCheckbox
+                      key={ancestor.numbers[0]}
+                      ancestor={ancestor}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Mother's Line */}
+            <div className="space-y-4">
+              <h3 className="font-medium text-sm text-gray-900 bg-gray-100 p-2 rounded">
+                Mother&apos;s Line
+              </h3>
+              <div className="space-y-4 pl-2">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">
+                    Mother&apos;s Father&apos;s Line
+                  </h4>
+                  {maternalFather.map((ancestor) => (
+                    <AncestorCheckbox
+                      key={ancestor.numbers[0]}
+                      ancestor={ancestor}
+                    />
+                  ))}
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">
+                    Mother&apos;s Mother&apos;s Line
+                  </h4>
+                  {maternalMother.map((ancestor) => (
+                    <AncestorCheckbox
+                      key={ancestor.numbers[0]}
+                      ancestor={ancestor}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export default function FamilyMap() {
   const [people, setPeople] = useState<Person[]>([]);
   const [yearRange, setYearRange] = useState([1800, 2024]);
@@ -541,6 +1262,21 @@ export default function FamilyMap() {
   >(null);
   const [isControlsCollapsed, setIsControlsCollapsed] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
+  // Move the temporaryHighlight state inside the component
+  const [temporaryHighlight, setTemporaryHighlight] = useState<{
+    personId: string;
+    type: "ancestors" | "descendants" | "both" | null;
+  } | null>(null);
+  const [ancestorFilter, setAncestorFilter] = useState<AncestorFilter>({
+    showAncestorNumbers: false,
+    selectedAncestors: new Set<number>(),
+  });
+  const [ahnentafelNumbers, setAhnentafelNumbers] = useState<
+    Map<string, number[]>
+  >(new Map());
+  const [ancestorFilterOpen, setAncestorFilterOpen] = useState(false);
+  const [locationPeople, setLocationPeople] = useState<LocationPerson[]>([]);
+  const [currentLocationIndex, setCurrentLocationIndex] = useState(0);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -597,31 +1333,26 @@ export default function FamilyMap() {
   // Update filteredEvents to include relation filtering
   const filteredEvents = React.useMemo(() => {
     return people.flatMap((person) => {
-      // Skip if relation filter is active and person doesn't match the filter
-      if (rootPerson && relationFilter !== "all") {
-        const relationship = relationships.get(person.id);
-        if (!relationship || relationship === "Not Related") return [];
+      // Only apply filters if they are explicitly set
+      if (rootPerson) {
+        // Handle ancestor number filtering
+        if (ancestorFilter.selectedAncestors.size > 0) {
+          const personGroups = getAncestorGroupInfo(
+            person.id,
+            ahnentafelNumbers,
+            relationships
+          );
 
-        // Skip root person if filtering
-        if (relationship === "Root Person") return [];
+          // Check if this person belongs to any of the selected ancestor groups
+          const isRelatedToSelectedAncestor = personGroups.some(({ number }) =>
+            ancestorFilter.selectedAncestors.has(number)
+          );
 
-        if (relationFilter === "ancestors") {
-          // Check if relationship code contains only parent codes (f/m)
-          // and doesn't contain any child codes (s/d)
-          const hasChildCodes = /[sd]/.test(relationship);
-          const hasParentCodes = /[fm]/.test(relationship);
-          if (hasChildCodes || !hasParentCodes) return [];
-        }
-
-        if (relationFilter === "descendants") {
-          // Check if relationship code contains only child codes (s/d)
-          // and doesn't contain any parent codes (f/m)
-          const hasParentCodes = /[fm]/.test(relationship);
-          const hasChildCodes = /[sd]/.test(relationship);
-          if (hasParentCodes || !hasChildCodes) return [];
+          if (!isRelatedToSelectedAncestor) return [];
         }
       }
 
+      // Always apply basic event filters...
       return person.events
         .filter(
           (event) =>
@@ -640,8 +1371,9 @@ export default function FamilyMap() {
     yearRange,
     selectedEventTypes,
     rootPerson,
-    relationFilter,
     relationships,
+    ancestorFilter,
+    ahnentafelNumbers,
   ]);
 
   // Update the useEffect to store relationships separately
@@ -700,6 +1432,15 @@ export default function FamilyMap() {
     }, 2000);
   };
 
+  useEffect(() => {
+    if (rootPerson && people.length > 0) {
+      const numbers = calculateAhnentafelNumbers(people, rootPerson);
+      setAhnentafelNumbers(numbers);
+    } else {
+      setAhnentafelNumbers(new Map());
+    }
+  }, [rootPerson, people]);
+
   return (
     <div className="h-screen w-screen overflow-hidden relative">
       {/* Controls panel */}
@@ -713,137 +1454,27 @@ export default function FamilyMap() {
       >
         {/* Panel content */}
         <div className={cn("p-4", isControlsCollapsed ? "hidden" : "")}>
-          <div className="space-y-4">
-            <label className="block">
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileUpload}
-                accept=".ged"
-                className="hidden"
-              />
-              <Button onClick={handleUploadClick}>
-                <FileUp className="w-4 h-4 mr-2" />
-                Upload GEDCOM
-              </Button>
-            </label>
-
-            <div className="w-48">
-              <RangeSlider
-                value={yearRange}
-                min={1500}
-                max={2024}
-                step={1}
-                onValueChange={setYearRange}
-                className="my-4"
-              />
-              <div className="flex justify-between mt-2 text-sm text-gray-600">
-                <span>{yearRange[0]}</span>
-                <span>{yearRange[1]}</span>
-              </div>
+          <div className="space-y-6">
+            {/* File upload */}
+            <div>
+              <label className="block">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                  accept=".ged"
+                  className="hidden"
+                />
+                <Button onClick={handleUploadClick}>
+                  <FileUp className="w-4 h-4 mr-2" />
+                  Upload GEDCOM
+                </Button>
+              </label>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <label className="text-sm text-gray-600">Event Types:</label>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant={
-                    selectedEventTypes.includes("BIRT") ? "default" : "outline"
-                  }
-                  onClick={() => {
-                    setSelectedEventTypes((prev) =>
-                      prev.includes("BIRT")
-                        ? prev.filter((t) => t !== "BIRT")
-                        : [...prev, "BIRT"]
-                    );
-                  }}
-                  className="flex items-center gap-1"
-                >
-                  <div
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: "#38a169" }}
-                  />
-                  Birth
-                </Button>
-                <Button
-                  size="sm"
-                  variant={
-                    selectedEventTypes.includes("DEAT") ? "default" : "outline"
-                  }
-                  onClick={() => {
-                    setSelectedEventTypes((prev) =>
-                      prev.includes("DEAT")
-                        ? prev.filter((t) => t !== "DEAT")
-                        : [...prev, "DEAT"]
-                    );
-                  }}
-                  className="flex items-center gap-1"
-                >
-                  <div
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: "#e53e3e" }}
-                  />
-                  Death
-                </Button>
-                <Button
-                  size="sm"
-                  variant={
-                    selectedEventTypes.includes("RESI") ? "default" : "outline"
-                  }
-                  onClick={() => {
-                    setSelectedEventTypes((prev) =>
-                      prev.includes("RESI")
-                        ? prev.filter((t) => t !== "RESI")
-                        : [...prev, "RESI"]
-                    );
-                  }}
-                  className="flex items-center gap-1"
-                >
-                  <div
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: "#3182ce" }}
-                  />
-                  Living
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-sm text-gray-600">Show Relations:</label>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant={relationFilter === "all" ? "default" : "outline"}
-                  onClick={() => setRelationFilter("all")}
-                  disabled={!rootPerson}
-                >
-                  All
-                </Button>
-                <Button
-                  size="sm"
-                  variant={
-                    relationFilter === "ancestors" ? "default" : "outline"
-                  }
-                  onClick={() => setRelationFilter("ancestors")}
-                  disabled={!rootPerson}
-                >
-                  Ancestors
-                </Button>
-                <Button
-                  size="sm"
-                  variant={
-                    relationFilter === "descendants" ? "default" : "outline"
-                  }
-                  onClick={() => setRelationFilter("descendants")}
-                  disabled={!rootPerson}
-                >
-                  Descendants
-                </Button>
-              </div>
-            </div>
-
-            <div className="w-48">
+            {/* Root person selection */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Root Person</label>
               <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline" className="w-full justify-between">
@@ -931,6 +1562,151 @@ export default function FamilyMap() {
                 </DialogContent>
               </Dialog>
             </div>
+
+            {/* Event types */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Event Types</label>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={
+                    selectedEventTypes.includes("BIRT") ? "default" : "outline"
+                  }
+                  onClick={() => {
+                    setSelectedEventTypes((prev) =>
+                      prev.includes("BIRT")
+                        ? prev.filter((t) => t !== "BIRT")
+                        : [...prev, "BIRT"]
+                    );
+                  }}
+                  className="flex items-center gap-1"
+                >
+                  <div
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: "#38a169" }}
+                  />
+                  Birth
+                </Button>
+                <Button
+                  size="sm"
+                  variant={
+                    selectedEventTypes.includes("DEAT") ? "default" : "outline"
+                  }
+                  onClick={() => {
+                    setSelectedEventTypes((prev) =>
+                      prev.includes("DEAT")
+                        ? prev.filter((t) => t !== "DEAT")
+                        : [...prev, "DEAT"]
+                    );
+                  }}
+                  className="flex items-center gap-1"
+                >
+                  <div
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: "#e53e3e" }}
+                  />
+                  Death
+                </Button>
+                <Button
+                  size="sm"
+                  variant={
+                    selectedEventTypes.includes("RESI") ? "default" : "outline"
+                  }
+                  onClick={() => {
+                    setSelectedEventTypes((prev) =>
+                      prev.includes("RESI")
+                        ? prev.filter((t) => t !== "RESI")
+                        : [...prev, "RESI"]
+                    );
+                  }}
+                  className="flex items-center gap-1"
+                >
+                  <div
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: "#3182ce" }}
+                  />
+                  Living
+                </Button>
+              </div>
+            </div>
+
+            {/* Year range */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Year Range</label>
+              <RangeSlider
+                value={yearRange}
+                min={1500}
+                max={2024}
+                step={1}
+                onValueChange={setYearRange}
+              />
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>{yearRange[0]}</span>
+                <span>{yearRange[1]}</span>
+              </div>
+            </div>
+
+            {/* Filter section - only show when root person is selected */}
+            {rootPerson && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Filter Events</label>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={relationFilter === "all" ? "default" : "outline"}
+                    onClick={() => setRelationFilter("all")}
+                  >
+                    All
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={
+                      relationFilter === "ancestors" ? "default" : "outline"
+                    }
+                    onClick={() => setRelationFilter("ancestors")}
+                  >
+                    Ancestors
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={
+                      relationFilter === "descendants" ? "default" : "outline"
+                    }
+                    onClick={() => setRelationFilter("descendants")}
+                  >
+                    Descendants
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {rootPerson && (
+              <div className="space-y-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setAncestorFilterOpen(!ancestorFilterOpen)}
+                  className={cn(
+                    "w-full",
+                    ancestorFilterOpen && "bg-blue-50 text-blue-600"
+                  )}
+                >
+                  Ancestor Numbers Filter
+                </Button>
+
+                <AncestorFilterPanel
+                  open={ancestorFilterOpen}
+                  onOpenChange={setAncestorFilterOpen}
+                  ancestors={get16Ancestors(
+                    people,
+                    rootPerson,
+                    ahnentafelNumbers
+                  )}
+                  filter={ancestorFilter}
+                  onFilterChange={setAncestorFilter}
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -1016,8 +1792,42 @@ export default function FamilyMap() {
           />
           <MarkerLayer
             events={filteredEvents}
-            onSelect={(person, event) => setSelectedPerson({ person, event })}
+            onSelect={(person, event) => {
+              // First set the selected person so the card shows immediately
+              setSelectedPerson({ person, event });
+
+              // Then process the location people
+              const peopleAtLocation = Array.from(
+                filteredEvents
+                  .filter(
+                    (e) =>
+                      e.event.coordinates[0] === event.coordinates[0] &&
+                      e.event.coordinates[1] === event.coordinates[1]
+                  )
+                  .reduce((map, e) => {
+                    if (!map.has(e.person.id)) {
+                      map.set(e.person.id, {
+                        person: e.person,
+                        events: [e.event],
+                      });
+                    } else {
+                      map.get(e.person.id)!.events.push(e.event);
+                    }
+                    return map;
+                  }, new Map<string, { person: Person; events: Event[] }>())
+              ).map((entry) => entry[1]);
+
+              setLocationPeople(peopleAtLocation);
+              setCurrentLocationIndex(
+                peopleAtLocation.findIndex((p) => p.person.id === person.id)
+              );
+            }}
             activeCoordinates={activeCoordinates}
+            rootPerson={rootPerson}
+            relationships={relationships}
+            temporaryHighlight={temporaryHighlight}
+            ahnentafelNumbers={ahnentafelNumbers}
+            ancestorFilter={ancestorFilter}
           />
           <MapController
             coordinates={zoomToLocation?.coordinates || null}
@@ -1029,7 +1839,7 @@ export default function FamilyMap() {
       {selectedPerson && (
         <Card
           className={cn(
-            "absolute left-0 bottom-0 bg-white shadow-lg z-[1000] overflow-y-auto rounded-none",
+            "absolute left-0 top-0 bg-white shadow-lg z-[1000] overflow-y-auto rounded-none",
             "min-h-[300px]",
             "max-h-[calc(100vh-2rem)]",
             "w-[400px]"
@@ -1041,13 +1851,63 @@ export default function FamilyMap() {
               <div className="p-4">
                 {/* Name and close button row */}
                 <div className="flex justify-between items-start gap-4">
-                  <h3 className="font-bold text-xl text-gray-900">
-                    {selectedPerson.person.name}
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    {locationPeople.length > 1 && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          const newIndex =
+                            (currentLocationIndex - 1 + locationPeople.length) %
+                            locationPeople.length;
+                          const newPerson = locationPeople[newIndex];
+                          setCurrentLocationIndex(newIndex);
+                          setSelectedPerson({
+                            person: newPerson.person,
+                            event: newPerson.events[0], // Show first event by default
+                          });
+                        }}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <h3 className="font-bold text-xl text-gray-900">
+                      {selectedPerson.person.name}
+                      {locationPeople.length > 1 && (
+                        <span className="text-sm font-normal text-gray-500 ml-2">
+                          ({currentLocationIndex + 1}/{locationPeople.length})
+                        </span>
+                      )}
+                    </h3>
+                    {locationPeople.length > 1 && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          const newIndex =
+                            (currentLocationIndex + 1) % locationPeople.length;
+                          const newPerson = locationPeople[newIndex];
+                          setCurrentLocationIndex(newIndex);
+                          setSelectedPerson({
+                            person: newPerson.person,
+                            event: newPerson.events[0], // Show first event by default
+                          });
+                        }}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => setSelectedPerson(null)}
+                    onClick={() => {
+                      setSelectedPerson(null);
+                      setLocationPeople([]);
+                      setCurrentLocationIndex(0);
+                    }}
                     className="h-8 w-8 p-0 -mt-1 -mr-1"
                   >
                     <X className="h-4 w-4" />
@@ -1129,6 +1989,8 @@ export default function FamilyMap() {
                                   person: parent,
                                   event: parentEvents[0],
                                 });
+                                // Clear any temporary highlight when selecting new person
+                                setTemporaryHighlight(null);
                               }
                             }}
                           >
@@ -1293,6 +2155,38 @@ export default function FamilyMap() {
                   </div>
                 </div>
               )}
+
+              {/* Ancestor Groups section */}
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">
+                  2x Great-Grandparent Groups
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {getAncestorGroupInfo(
+                    selectedPerson.person.id,
+                    ahnentafelNumbers,
+                    relationships
+                  ).map(({ number, type }) => (
+                    <span
+                      key={`${number}-${type}`}
+                      className={cn(
+                        "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
+                        type === "ancestor"
+                          ? "bg-yellow-100 text-yellow-800 border border-yellow-300"
+                          : "bg-purple-100 text-purple-800 border border-purple-300"
+                      )}
+                    >
+                      {number.toString().padStart(2, "0")}-
+                      {getAncestorPath(number)}
+                      {type === "descendant" && (
+                        <div className="text-xs text-gray-500 ml-1">
+                          (descendant)
+                        </div>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </Card>

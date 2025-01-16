@@ -1,0 +1,34 @@
+/* Update the marker number styles */
+.marker-number {
+  color: black;
+  background: white;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: bold;
+  border: 1px solid #666;
+  white-space: nowrap;
+  text-align: center;
+  min-width: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Remove the previous after pseudo-element */
+.has-ancestor-number::after {
+  display: none;
+}
+
+/* Add styles for ancestor group colors */
+.marker {
+  border-radius: 50%;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.marker-number-container {
+  background: none !important;
+  border: none !important;
+}
