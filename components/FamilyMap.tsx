@@ -3,15 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Loader2,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-  Minus,
-  Info,
-} from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Plus, Minus, Info } from "lucide-react";
 import { MapContainer, TileLayer } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
@@ -27,7 +19,6 @@ import {
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { geocodePlace } from "@/lib/geocoding";
-import { LocationButton } from "@/components/map/LocationButton";
 import { MapController } from "@/components/map/MapController";
 import { MarkerLayer } from "@/components/map/MarkerLayer";
 import {
@@ -43,10 +34,10 @@ import {
 } from "@/app/utils/types";
 import { calculateRelationships } from "@/app/utils/relationships";
 import {
-  calculateAhnentafelNumbers,
   get16Ancestors,
   getAncestorPath,
   getAncestorGroupInfo,
+  calculateAhnentafelNumbers,
 } from "@/app/utils/ancestors";
 import { FileUpload } from "@/components/ui/control-panel/FileUpload";
 import { EventTypeFilter } from "@/components/ui/control-panel/EventTypeFilter";
@@ -54,6 +45,7 @@ import { YearRangeFilter } from "@/components/ui/control-panel/YearRangeFilter";
 import { RelationshipFilter } from "@/components/ui/control-panel/RelationshipFilter";
 import { GeocodingSection } from "@/components/ui/control-panel/GeocodingSection";
 import { RootPersonDialog } from "@/components/ui/control-panel/RootPersonDialog";
+import { PersonCard } from "@/components/person/PersonCard";
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
@@ -532,22 +524,6 @@ export default function FamilyMap() {
     calculateRelationshipsAsync();
   }, [rootPerson, people]);
 
-  const getRelationship = (personId: string) => relationships.get(personId);
-
-  const handleLocationClick = (
-    coordinates: [number, number],
-    currentZoom?: number
-  ) => {
-    setZoomToLocation({
-      coordinates,
-      zoom: currentZoom ? currentZoom + 2 : 14,
-    });
-    setActiveCoordinates(coordinates);
-    setTimeout(() => {
-      setActiveCoordinates(null);
-    }, 2000);
-  };
-
   useEffect(() => {
     if (rootPerson && people.length > 0) {
       const numbers = calculateAhnentafelNumbers(people, rootPerson);
@@ -637,6 +613,20 @@ export default function FamilyMap() {
         successCount,
       });
     }
+  };
+
+  const handleLocationClick = (
+    coordinates: [number, number],
+    currentZoom?: number
+  ) => {
+    setZoomToLocation({
+      coordinates,
+      zoom: currentZoom ? currentZoom + 2 : 14,
+    });
+    setActiveCoordinates(coordinates);
+    setTimeout(() => {
+      setActiveCoordinates(null);
+    }, 2000);
   };
 
   return (
@@ -836,6 +826,7 @@ export default function FamilyMap() {
             rootPerson={rootPerson}
             relationships={relationships}
             temporaryHighlight={temporaryHighlight}
+            setTemporaryHighlightAction={setTemporaryHighlight}
             ahnentafelNumbers={ahnentafelNumbers}
             ancestorFilter={ancestorFilter}
           />
@@ -847,349 +838,20 @@ export default function FamilyMap() {
       )}
 
       {selectedPerson && (
-        <Card
-          className={cn(
-            "absolute left-0 top-0 bg-white shadow-lg z-[1000] overflow-y-auto rounded-none",
-            "min-h-[300px]",
-            "max-h-[calc(100vh-2rem)]",
-            "w-[400px]"
-          )}
-        >
-          <div className="flex flex-col h-full">
-            <div className="sticky top-0 z-10 bg-white border-b mb-2">
-              <div className="p-4">
-                <div className="flex justify-between items-start gap-4">
-                  <div className="flex items-center gap-2">
-                    {locationPeople.length > 1 && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          const newIndex =
-                            (currentLocationIndex - 1 + locationPeople.length) %
-                            locationPeople.length;
-                          const newPerson = locationPeople[newIndex];
-                          setCurrentLocationIndex(newIndex);
-                          setSelectedPerson({
-                            person: newPerson.person,
-                            event: newPerson.events[0],
-                          });
-                        }}
-                        className="h-8 w-8 p-0"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                    )}
-                    <h3 className="font-bold text-xl text-gray-900">
-                      {selectedPerson.person.name}
-                      {locationPeople.length > 1 && (
-                        <span className="text-sm font-normal text-gray-500 ml-2">
-                          ({currentLocationIndex + 1}/{locationPeople.length})
-                        </span>
-                      )}
-                    </h3>
-                    {locationPeople.length > 1 && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          const newIndex =
-                            (currentLocationIndex + 1) % locationPeople.length;
-                          const newPerson = locationPeople[newIndex];
-                          setCurrentLocationIndex(newIndex);
-                          setSelectedPerson({
-                            person: newPerson.person,
-                            event: newPerson.events[0],
-                          });
-                        }}
-                        className="h-8 w-8 p-0"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setSelectedPerson(null);
-                      setLocationPeople([]);
-                      setCurrentLocationIndex(0);
-                    }}
-                    className="h-8 w-8 p-0 -mt-1 -mr-1"
-                  >
-                    <X className="h-4 w-4" />
-                    <span className="sr-only">Close</span>
-                  </Button>
-                </div>
-
-                <div className="flex justify-between items-center mt-1">
-                  {getRelationship(selectedPerson.person.id)?.relationship && (
-                    <div className="text-sm font-medium text-blue-600">
-                      {getRelationship(selectedPerson.person.id)?.relationship}
-                    </div>
-                  )}
-                  <div className="ml-auto">
-                    {rootPerson !== selectedPerson.person.id ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setRootPerson(selectedPerson.person.id)}
-                        disabled={isCalculating}
-                        className="whitespace-nowrap text-xs"
-                      >
-                        {isCalculating ? (
-                          <>
-                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                            Calculating...
-                          </>
-                        ) : (
-                          "Set as Root"
-                        )}
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setRootPerson(null)}
-                        disabled={isCalculating}
-                        className="whitespace-nowrap text-xs"
-                      >
-                        {isCalculating ? (
-                          <>
-                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                            Calculating...
-                          </>
-                        ) : (
-                          "Clear Root"
-                        )}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4 px-4 pb-4">
-              {selectedPerson.person.parents.length > 0 && (
-                <div className="bg-gray-50 p-2 rounded-lg">
-                  <h4 className="font-medium text-gray-900 mb-2">Parents</h4>
-                  <div className="space-y-0">
-                    {selectedPerson.person.parents.map((parentId) => {
-                      const parent = people.find((p) => p.id === parentId);
-                      return (
-                        parent && (
-                          <button
-                            key={parentId}
-                            className="w-full text-left px-2 py-1 hover:bg-gray-100 rounded-md text-blue-600 hover:text-blue-800"
-                            onClick={() => {
-                              setSelectedPerson({
-                                person: parent,
-                                event:
-                                  parent.events.find(
-                                    (e) =>
-                                      e.coordinates[0] !== 0 &&
-                                      e.coordinates[1] !== 0 &&
-                                      e.place !== "Unknown"
-                                  ) || parent.events[0],
-                              });
-                              setTemporaryHighlight(null);
-                            }}
-                          >
-                            {parent.name}
-                          </button>
-                        )
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                {selectedPerson.person.events
-                  .filter((event) => event.type === "BIRT")
-                  .map((event, index) => (
-                    <div
-                      key={index}
-                      className={cn(
-                        "p-3 rounded-lg border transition-colors",
-                        event === selectedPerson.event
-                          ? "bg-blue-100 border-blue-300 shadow-sm"
-                          : "hover:bg-gray-50 border-transparent"
-                      )}
-                    >
-                      <div className="font-medium text-blue-900">Birth</div>
-                      <div className="text-sm text-gray-600">
-                        {event.date.from}
-                        {event.date.to && ` to ${event.date.to}`}
-                      </div>
-                      <div className="flex justify-between items-center text-sm mt-1">
-                        <span className="text-gray-700">{event.place}</span>
-                        {event.coordinates[0] !== 0 &&
-                          event.coordinates[1] !== 0 && (
-                            <LocationButton
-                              coordinates={event.coordinates}
-                              onClick={() =>
-                                handleLocationClick(event.coordinates, 12)
-                              }
-                            />
-                          )}
-                      </div>
-                    </div>
-                  ))}
-
-                {selectedPerson.person.events
-                  .filter((event) => event.type === "DEAT")
-                  .map((event, index) => (
-                    <div
-                      key={index}
-                      className={cn(
-                        "p-3 rounded-lg border transition-colors",
-                        event === selectedPerson.event
-                          ? "bg-blue-100 border-blue-300 shadow-sm"
-                          : "hover:bg-gray-50 border-transparent"
-                      )}
-                    >
-                      <div className="font-medium text-blue-900">Death</div>
-                      <div className="text-sm text-gray-600">
-                        {event.date.from}
-                        {event.date.to && ` to ${event.date.to}`}
-                      </div>
-                      <div className="flex justify-between items-center text-sm mt-1">
-                        <span className="text-gray-700">{event.place}</span>
-                        {event.coordinates[0] !== 0 &&
-                          event.coordinates[1] !== 0 && (
-                            <LocationButton
-                              coordinates={event.coordinates}
-                              onClick={() =>
-                                handleLocationClick(event.coordinates, 12)
-                              }
-                            />
-                          )}
-                      </div>
-                    </div>
-                  ))}
-
-                {selectedPerson.person.events.some(
-                  (event) => event.type === "RESI"
-                ) && (
-                  <div>
-                    <h4 className="font-medium mb-2">Places of Residence</h4>
-                    <div className="space-y-2">
-                      {selectedPerson.person.events
-                        .filter((event) => event.type === "RESI")
-                        .sort((a, b) => {
-                          if (a.date.year === null) return 1;
-                          if (b.date.year === null) return -1;
-                          return a.date.year - b.date.year;
-                        })
-                        .map((event, index) => (
-                          <div
-                            key={index}
-                            className={cn(
-                              "p-3 rounded-lg border transition-colors",
-                              event === selectedPerson.event
-                                ? "bg-blue-100 border-blue-300 shadow-sm"
-                                : "hover:bg-gray-50 border-transparent"
-                            )}
-                          >
-                            <div className="text-sm text-gray-600">
-                              {event.date.from}
-                              {event.date.to && ` to ${event.date.to}`}
-                            </div>
-                            <div className="flex justify-between items-center text-sm">
-                              <span className="text-gray-700">
-                                {event.place}
-                              </span>
-                              {event.coordinates[0] !== 0 &&
-                                event.coordinates[1] !== 0 && (
-                                  <LocationButton
-                                    coordinates={event.coordinates}
-                                    onClick={() =>
-                                      handleLocationClick(event.coordinates, 12)
-                                    }
-                                  />
-                                )}
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {selectedPerson.person.children.length > 0 && (
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <h4 className="font-medium text-gray-900 mb-2">Children</h4>
-                  <div className="space-y-2">
-                    {selectedPerson.person.children.map((childId) => {
-                      const child = people.find((p) => p.id === childId);
-                      return (
-                        child && (
-                          <button
-                            key={childId}
-                            className="w-full text-left px-2 py-1 hover:bg-gray-100 rounded-md text-blue-600 hover:text-blue-800"
-                            onClick={() => {
-                              setSelectedPerson({
-                                person: child,
-                                event:
-                                  child.events.find(
-                                    (e) =>
-                                      e.coordinates[0] !== 0 &&
-                                      e.coordinates[1] !== 0 &&
-                                      e.place !== "Unknown"
-                                  ) || child.events[0],
-                              });
-                              setTemporaryHighlight(null);
-                            }}
-                          >
-                            {child.name}
-                          </button>
-                        )
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">
-                  2x Great-Grandparent Groups
-                </h4>
-                <div className="flex flex-wrap gap-2">
-                  {getAncestorGroupInfo(
-                    selectedPerson.person.id,
-                    ahnentafelNumbers,
-                    relationships
-                  ).map(({ number, type }) => (
-                    <span
-                      key={`${number}-${type}`}
-                      className={cn(
-                        "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
-                        type === "ancestor"
-                          ? "bg-yellow-100 text-yellow-800 border border-yellow-300"
-                          : "bg-purple-100 text-purple-800 border border-purple-300"
-                      )}
-                    >
-                      {number.toString().padStart(2, "0")}-
-                      {getAncestorPath(
-                        number,
-                        people,
-                        relationships,
-                        ahnentafelNumbers
-                      )}
-                      {type === "descendant" && (
-                        <div className="text-xs text-gray-500 ml-1">
-                          (descendant)
-                        </div>
-                      )}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </Card>
+        <PersonCard
+          selectedPerson={selectedPerson}
+          locationPeople={locationPeople}
+          currentLocationIndex={currentLocationIndex}
+          setCurrentLocationIndex={setCurrentLocationIndex}
+          setSelectedPerson={setSelectedPerson}
+          setLocationPeople={setLocationPeople}
+          handleLocationClick={handleLocationClick}
+          rootPerson={rootPerson}
+          setRootPerson={setRootPerson}
+          isCalculating={isCalculating}
+          relationships={relationships}
+          people={people}
+        />
       )}
 
       {rootPerson && (

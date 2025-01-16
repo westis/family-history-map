@@ -80,6 +80,12 @@ interface MarkerLayerProps {
     personId: string;
     type: "ancestors" | "descendants" | "both" | null;
   } | null;
+  setTemporaryHighlightAction: (
+    value: {
+      personId: string;
+      type: "ancestors" | "descendants" | "both" | null;
+    } | null
+  ) => void;
   ahnentafelNumbers: Map<string, number[]>;
   ancestorFilter: AncestorFilter;
 }
@@ -91,6 +97,7 @@ export function MarkerLayer({
   rootPerson,
   relationships,
   temporaryHighlight,
+  setTemporaryHighlightAction,
   ahnentafelNumbers,
   ancestorFilter,
 }: MarkerLayerProps) {
@@ -404,6 +411,7 @@ export function MarkerLayer({
     rootPerson,
     relationships,
     temporaryHighlight,
+    setTemporaryHighlightAction,
     ahnentafelNumbers,
     ancestorFilter,
     getAllGGNumbers,
