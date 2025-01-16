@@ -1,5 +1,5 @@
-import { useMap } from "react-leaflet";
 import { useEffect } from "react";
+import { useMap } from "react-leaflet";
 
 interface MapControllerProps {
   coordinates: [number, number] | null;
