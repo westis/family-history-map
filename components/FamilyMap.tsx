@@ -37,7 +37,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { usePathname } from "next/navigation";
+
+const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
 interface Event {
   type: "BIRT" | "DEAT" | "RESI";
@@ -509,13 +510,6 @@ type EventType = "BIRT" | "DEAT" | "RESI";
 type RelationFilter = "all" | "ancestors" | "descendants";
 
 export default function FamilyMap() {
-  const pathname = usePathname();
-  const basePath =
-    process.env.NODE_ENV === "production" ? "/family-history-map" : "";
-
-  // Update the tile layer URL to use the basePath
-  const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
-
   const [people, setPeople] = useState<Person[]>([]);
   const [yearRange, setYearRange] = useState([1800, 2024]);
   const [selectedPerson, setSelectedPerson] = useState<{
