@@ -61,6 +61,7 @@ import {
   getAncestorGroupInfo,
 } from "@/app/utils/ancestors";
 import { FileUpload } from "@/components/ui/control-panel/FileUpload";
+import { EventTypeFilter } from "@/components/ui/control-panel/EventTypeFilter";
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
@@ -892,71 +893,10 @@ export default function FamilyMap() {
             </div>
 
             {/* Event types */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Event Types</label>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant={
-                    selectedEventTypes.includes("BIRT") ? "default" : "outline"
-                  }
-                  onClick={() => {
-                    setSelectedEventTypes((prev) =>
-                      prev.includes("BIRT")
-                        ? prev.filter((t) => t !== "BIRT")
-                        : [...prev, "BIRT"]
-                    );
-                  }}
-                  className="flex items-center gap-1"
-                >
-                  <div
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: "#38a169" }}
-                  />
-                  Birth
-                </Button>
-                <Button
-                  size="sm"
-                  variant={
-                    selectedEventTypes.includes("DEAT") ? "default" : "outline"
-                  }
-                  onClick={() => {
-                    setSelectedEventTypes((prev) =>
-                      prev.includes("DEAT")
-                        ? prev.filter((t) => t !== "DEAT")
-                        : [...prev, "DEAT"]
-                    );
-                  }}
-                  className="flex items-center gap-1"
-                >
-                  <div
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: "#e53e3e" }}
-                  />
-                  Death
-                </Button>
-                <Button
-                  size="sm"
-                  variant={
-                    selectedEventTypes.includes("RESI") ? "default" : "outline"
-                  }
-                  onClick={() => {
-                    setSelectedEventTypes((prev) =>
-                      prev.includes("RESI")
-                        ? prev.filter((t) => t !== "RESI")
-                        : [...prev, "RESI"]
-                    );
-                  }}
-                  className="flex items-center gap-1"
-                >
-                  <div
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: "#3182ce" }}
-                  />
-                  Living
-                </Button>
-              </div>
-            </div>
+            <EventTypeFilter
+              selectedTypes={selectedEventTypes}
+              onChangeAction={setSelectedEventTypes}
+            />
 
             {/* Year range */}
             <div className="space-y-2">
