@@ -27,7 +27,7 @@ import {
   AncestorInfo,
   AncestorFilter,
   RelationshipInfo,
-  GeocodingReport,
+  GeocodingReport as GeocodingReportType,
   LocationPerson,
   EventType,
   RelationFilter,
@@ -46,6 +46,7 @@ import { RelationshipFilter } from "@/components/ui/control-panel/RelationshipFi
 import { GeocodingSection } from "@/components/ui/control-panel/GeocodingSection";
 import { RootPersonDialog } from "@/components/ui/control-panel/RootPersonDialog";
 import { PersonCard } from "@/components/person/PersonCard";
+import { GeocodingReport } from "@/components/dialogs/GeocodingReport";
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
@@ -439,7 +440,7 @@ export default function FamilyMap() {
     currentPlace: "",
   });
   const [geocodingReport, setGeocodingReport] =
-    useState<GeocodingReport | null>(null);
+    useState<GeocodingReportType | null>(null);
   const [placesToGeocode, setPlacesToGeocode] = useState<Set<string>>(
     new Set()
   );
@@ -879,75 +880,10 @@ export default function FamilyMap() {
         />
       )}
 
-      {geocodingReport && (
-        <Dialog
-          open={!!geocodingReport}
-          onOpenChange={() => setGeocodingReport(null)}
-        >
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Geocoding Report</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="flex justify-between text-sm">
-                <span>Total places attempted:</span>
-                <span className="font-medium">
-                  {geocodingReport.totalAttempted}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span>Successfully geocoded:</span>
-                <span className="font-medium text-green-600">
-                  {geocodingReport.successCount}(
-                  {Math.round(
-                    (geocodingReport.successCount /
-                      geocodingReport.totalAttempted) *
-                      100
-                  )}
-                  %)
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span>Failed to geocode:</span>
-                <span className="font-medium text-red-600">
-                  {geocodingReport.failedPlaces.length}(
-                  {Math.round(
-                    (geocodingReport.failedPlaces.length /
-                      geocodingReport.totalAttempted) *
-                      100
-                  )}
-                  %)
-                </span>
-              </div>
-
-              {geocodingReport.failedPlaces.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="font-medium mb-2">Failed Places:</h4>
-                  <div className="bg-gray-50 rounded-lg p-4 max-h-[300px] overflow-y-auto">
-                    <ul className="space-y-1">
-                      {geocodingReport.failedPlaces
-                        .sort()
-                        .map((place, index) => (
-                          <li key={index} className="text-sm text-gray-700">
-                            {place}
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-4 text-sm text-gray-500">
-                <p>
-                  Failed places could not be geocoded due to unclear or
-                  historical place names. You may want to manually review these
-                  locations.
-                </p>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
+      <GeocodingReport
+        report={geocodingReport}
+        onOpenChange={() => setGeocodingReport(null)}
+      />
     </div>
   );
 }
