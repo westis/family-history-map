@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Plus,
   Minus,
+  Info,
 } from "lucide-react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -1311,6 +1312,44 @@ function AncestorFilterPanel({
   );
 }
 
+// Add this new component before the main FamilyMap component
+function InfoPanel({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>About Family Map</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p>
+            Family Map is a tool for visualizing and exploring your family
+            history geographically. Upload a GEDCOM file to see where your
+            ancestors lived, were born, and died.
+          </p>
+          <div className="space-y-2">
+            <h3 className="font-medium">Created by</h3>
+            <p>Daniel Westergren</p>
+            <div className="flex items-center gap-2">
+              <a
+                href="mailto:westis+dna@gmail.com"
+                className="text-blue-600 hover:text-blue-800"
+              >
+                westis+dna@gmail.com
+              </a>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function FamilyMap() {
   const [people, setPeople] = useState<Person[]>([]);
   const [yearRange, setYearRange] = useState([1800, 2024]);
@@ -1358,6 +1397,8 @@ export default function FamilyMap() {
   const [ancestorFilterOpen, setAncestorFilterOpen] = useState(false);
   const [locationPeople, setLocationPeople] = useState<LocationPerson[]>([]);
   const [currentLocationIndex, setCurrentLocationIndex] = useState(0);
+  // Add this state near the other useState declarations:
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1546,6 +1587,20 @@ export default function FamilyMap() {
 
   return (
     <div className="h-screen w-screen overflow-hidden relative">
+      {/* Info button */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setInfoOpen(true)}
+        className="absolute top-4 left-4 z-[1000] bg-white shadow-md"
+      >
+        <Info className="h-4 w-4 mr-2" />
+        About
+      </Button>
+
+      {/* Info panel */}
+      <InfoPanel open={infoOpen} onOpenChange={setInfoOpen} />
+
       {/* Controls panel */}
       <div
         className={cn(
