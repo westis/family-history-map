@@ -10,12 +10,6 @@ import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import L from "leaflet";
 import "leaflet.markercluster";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { geocodePlace } from "@/lib/geocoding";
@@ -47,6 +41,7 @@ import { GeocodingSection } from "@/components/ui/control-panel/GeocodingSection
 import { RootPersonDialog } from "@/components/ui/control-panel/RootPersonDialog";
 import { PersonCard } from "@/components/person/PersonCard";
 import { GeocodingReport } from "@/components/dialogs/GeocodingReport";
+import { InfoPanel } from "@/components/dialogs/InfoPanel";
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
@@ -349,43 +344,6 @@ function AncestorFilterPanel({
         </div>
       </Card>
     </div>
-  );
-}
-
-function InfoPanel({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle>About Family Map</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <p>
-            Family Map is a tool for visualizing and exploring your family
-            history geographically. Upload a GEDCOM file to see where your
-            ancestors lived, were born, and died.
-          </p>
-          <div className="space-y-2">
-            <h3 className="font-medium">Created by</h3>
-            <p>Daniel Westergren</p>
-            <div className="flex items-center gap-2">
-              <a
-                href="mailto:westis+dna@gmail.com"
-                className="text-blue-600 hover:text-blue-800"
-              >
-                westis+dna@gmail.com
-              </a>
-            </div>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
 
