@@ -4,8 +4,6 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  Check,
-  ChevronsUpDown,
   Loader2,
   X,
   ChevronLeft,
@@ -21,19 +19,10 @@ import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import L from "leaflet";
 import "leaflet.markercluster";
 import {
-  Command,
-  CommandInput,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -63,10 +52,11 @@ import { FileUpload } from "@/components/ui/control-panel/FileUpload";
 import { EventTypeFilter } from "@/components/ui/control-panel/EventTypeFilter";
 import { YearRangeFilter } from "@/components/ui/control-panel/YearRangeFilter";
 import { RelationshipFilter } from "@/components/ui/control-panel/RelationshipFilter";
+import { GeocodingSection } from "@/components/ui/control-panel/GeocodingSection";
+import { RootPersonDialog } from "@/components/ui/control-panel/RootPersonDialog";
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
-// Add this interface near the top with other interfaces
 interface AncestorFilterPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -80,7 +70,6 @@ interface AncestorFilterPanelProps {
   onSelectPerson: (person: Person) => void;
 }
 
-// Replace Draggable implementation with custom dragging
 function AncestorFilterPanel({
   open,
   onOpenChange,
@@ -88,14 +77,13 @@ function AncestorFilterPanel({
   filter,
   onFilterChange,
   setRelationFilter,
-  people, // Add this prop
-  relationships, // Add this prop
-  ahnentafelNumbers, // Add this prop
-  onSelectPerson, // Add this new prop
+  people,
+  relationships,
+  ahnentafelNumbers,
+  onSelectPerson,
 }: AncestorFilterPanelProps) {
   console.log("AncestorFilterPanel render:", { open });
 
-  // Initialize position to center of screen
   const [position, setPosition] = useState(() => {
     if (typeof window !== "undefined") {
       const viewportWidth = window.innerWidth;
@@ -152,22 +140,18 @@ function AncestorFilterPanel({
     };
   }, [isDragging, handleMouseMove]);
 
-  // Define AncestorCheckbox inside the panel to access filter props
   const AncestorCheckbox = ({ ancestor }: { ancestor: AncestorInfo }) => {
-    // Find the person object for this ancestor
     const person = people.find((p) =>
       ahnentafelNumbers
         .get(p.id)
         ?.some((n) => ancestor.numbers.includes(n - 15))
     );
 
-    // Format years separately
     const years =
       ancestor.birthYear || ancestor.deathYear
         ? `, ${ancestor.birthYear || "?"}-${ancestor.deathYear || "?"}`
         : "";
 
-    // Get relationship path
     const path = getAncestorPath(
       Math.min(...ancestor.numbers),
       people,
@@ -222,7 +206,6 @@ function AncestorFilterPanel({
     );
   };
 
-  // Group ancestors by paternal/maternal lines (keep existing grouping code)
   const paternalFather = ancestors.filter((ancestor: AncestorInfo) =>
     ancestor.numbers.some((n: number) => n >= 1 && n <= 4)
   );
@@ -240,13 +223,11 @@ function AncestorFilterPanel({
 
   return (
     <div className="fixed inset-0 z-[9999] overflow-hidden">
-      {/* Overlay */}
       <div
         className="absolute inset-0 bg-black/20"
         onClick={() => onOpenChange(false)}
       />
 
-      {/* Panel */}
       <Card
         ref={panelRef}
         className="absolute bg-white shadow-lg w-[800px] max-h-[90vh] overflow-y-auto"
@@ -302,7 +283,6 @@ function AncestorFilterPanel({
                     showAncestorNumbers: filter.showAncestorNumbers,
                     selectedAncestors: new Set<number>(),
                   });
-                  // Also reset relation filter
                   setRelationFilter("all");
                 }}
                 className="text-xs"
@@ -312,7 +292,6 @@ function AncestorFilterPanel({
             </div>
 
             <div className="grid grid-cols-2 gap-8 max-h-[60vh] overflow-y-auto">
-              {/* Father's Line */}
               <div className="space-y-4">
                 <h3 className="font-medium text-sm text-gray-900 bg-gray-100 p-2 rounded">
                   Father&apos;s Line
@@ -343,7 +322,6 @@ function AncestorFilterPanel({
                 </div>
               </div>
 
-              {/* Mother's Line */}
               <div className="space-y-4">
                 <h3 className="font-medium text-sm text-gray-900 bg-gray-100 p-2 rounded">
                   Mother&apos;s Line
@@ -381,7 +359,6 @@ function AncestorFilterPanel({
   );
 }
 
-// Add this new component before the main FamilyMap component
 function InfoPanel({
   open,
   onOpenChange,
@@ -441,16 +418,13 @@ export default function FamilyMap() {
     "DEAT",
     "RESI",
   ]);
-  // Add state for the relation filter
   const [relationFilter, setRelationFilter] = useState<RelationFilter>("all");
   const [isCalculating, setIsCalculating] = useState(false);
-  // Add state for the active marker
   const [activeCoordinates, setActiveCoordinates] = useState<
     [number, number] | null
   >(null);
   const [isControlsCollapsed, setIsControlsCollapsed] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
-  // Move the temporaryHighlight state inside the component
   const [temporaryHighlight, setTemporaryHighlight] = useState<{
     personId: string;
     type: "ancestors" | "descendants" | "both" | null;
@@ -465,31 +439,23 @@ export default function FamilyMap() {
   const [ancestorFilterOpen, setAncestorFilterOpen] = useState(false);
   const [locationPeople, setLocationPeople] = useState<LocationPerson[]>([]);
   const [currentLocationIndex, setCurrentLocationIndex] = useState(0);
-  // Add this state near the other useState declarations:
   const [infoOpen, setInfoOpen] = useState(false);
-  // Move state declarations here with the other states
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [geocodingProgress, setGeocodingProgress] = useState({
     processed: 0,
     total: 0,
     currentPlace: "",
   });
-  // Add state for geocoding report
   const [geocodingReport, setGeocodingReport] =
     useState<GeocodingReport | null>(null);
-  // Add near other state declarations
   const [placesToGeocode, setPlacesToGeocode] = useState<Set<string>>(
     new Set()
   );
-  // Add a ref to track if geocoding should continue
   const geocodingRef = useRef({ shouldContinue: true });
 
-  // Update filteredEvents to include relation filtering
   const filteredEvents = React.useMemo(() => {
     return people.flatMap((person) => {
-      // Only apply filters if root person is selected
       if (rootPerson) {
-        // Get all applicable filters for this person
         const relationship = relationships.get(person.id);
         const personGroups = getAncestorGroupInfo(
           person.id,
@@ -497,15 +463,12 @@ export default function FamilyMap() {
           relationships
         );
 
-        // Check if person matches relation filter
         const matchesRelationFilter = (() => {
           if (relationFilter === "all") return true;
           if (!relationship) return false;
 
-          // Always include root person
           if (relationship.type === "root") return true;
 
-          // Simply check the relationship type
           if (relationFilter === "ancestors")
             return relationship.type === "ancestor";
           if (relationFilter === "descendants")
@@ -514,20 +477,17 @@ export default function FamilyMap() {
           return false;
         })();
 
-        // Check if person matches ancestor group filter
         const matchesAncestorFilter =
           ancestorFilter.selectedAncestors.size === 0 ||
           personGroups.some(({ number }) =>
             ancestorFilter.selectedAncestors.has(number)
           );
 
-        // Skip if person doesn't match either filter
         if (!matchesRelationFilter || !matchesAncestorFilter) {
           return [];
         }
       }
 
-      // Apply basic event filters
       return person.events
         .filter(
           (event) =>
@@ -552,13 +512,11 @@ export default function FamilyMap() {
     ahnentafelNumbers,
   ]);
 
-  // Update the useEffect to store relationships separately
   useEffect(() => {
     async function calculateRelationshipsAsync() {
       if (rootPerson && people.length > 0) {
         setIsCalculating(true);
         try {
-          // Wrap in setTimeout to allow UI to update
           await new Promise((resolve) => setTimeout(resolve, 0));
           const newRelationships = calculateRelationships(people, rootPerson);
           setRelationships(newRelationships);
@@ -574,25 +532,8 @@ export default function FamilyMap() {
     calculateRelationshipsAsync();
   }, [rootPerson, people]);
 
-  // Helper function to get relationship for a person
   const getRelationship = (personId: string) => relationships.get(personId);
 
-  // Filter people based on search term
-  const filteredPeople = React.useMemo(() => {
-    if (!searchTerm) return people;
-
-    const searchTerms = searchTerm.toLowerCase().trim().split(/\s+/);
-
-    return people
-      .filter((person) => {
-        const name = person.name.toLowerCase();
-        // Match if all search terms are found in the name in any order
-        return searchTerms.every((term) => name.includes(term));
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [people, searchTerm]);
-
-  // Update the click handler to zoom closer
   const handleLocationClick = (
     coordinates: [number, number],
     currentZoom?: number
@@ -602,7 +543,6 @@ export default function FamilyMap() {
       zoom: currentZoom ? currentZoom + 2 : 14,
     });
     setActiveCoordinates(coordinates);
-    // Clear the active marker after animation
     setTimeout(() => {
       setActiveCoordinates(null);
     }, 2000);
@@ -637,12 +577,11 @@ export default function FamilyMap() {
     const placesArray = Array.from(placesToGeocode);
 
     for (let i = 0; i < placesArray.length; i++) {
-      // Check the ref instead of the state
       if (!geocodingRef.current.shouldContinue) {
         console.log("Geocoding cancelled");
         const remainingPlaces = new Set(placesArray.slice(i));
         setPlacesToGeocode(remainingPlaces);
-        break; // Exit the loop
+        break;
       }
 
       const place = placesArray[i];
@@ -659,7 +598,6 @@ export default function FamilyMap() {
           geocodedPlaces.set(place, coordinates);
           successCount++;
 
-          // Update people with new coordinates immediately
           setPeople((currentPeople) => {
             const updatedPeople = currentPeople.map((person) => ({
               ...person,
@@ -673,7 +611,6 @@ export default function FamilyMap() {
             return updatedPeople;
           });
 
-          // Remove this place from placesToGeocode immediately
           setPlacesToGeocode((current) => {
             const updated = new Set(current);
             updated.delete(place);
@@ -690,11 +627,9 @@ export default function FamilyMap() {
       processed++;
     }
 
-    // Clean up
     setIsGeocoding(false);
-    geocodingRef.current.shouldContinue = true; // Reset for next time
+    geocodingRef.current.shouldContinue = true;
 
-    // Only show report if we weren't cancelled
     if (processed > 0 && geocodingRef.current.shouldContinue) {
       setGeocodingReport({
         failedPlaces,
@@ -706,7 +641,6 @@ export default function FamilyMap() {
 
   return (
     <div className="h-screen w-screen overflow-hidden relative">
-      {/* Info button */}
       <Button
         variant="outline"
         size="sm"
@@ -717,10 +651,8 @@ export default function FamilyMap() {
         About
       </Button>
 
-      {/* Info panel */}
       <InfoPanel open={infoOpen} onOpenChange={setInfoOpen} />
 
-      {/* Controls panel */}
       <div
         className={cn(
           "absolute top-4 right-4 z-[1000] transition-transform duration-200",
@@ -729,10 +661,8 @@ export default function FamilyMap() {
             : "bg-white rounded-lg shadow-lg"
         )}
       >
-        {/* Panel content */}
         <div className={cn("p-4", isControlsCollapsed ? "hidden" : "")}>
           <div className="space-y-6">
-            {/* File upload */}
             <FileUpload
               onUploadAction={setPeople}
               onYearRangeUpdateAction={(minYear, maxYear) =>
@@ -746,163 +676,35 @@ export default function FamilyMap() {
               }}
             />
 
-            {/* Geocoding section */}
-            {placesToGeocode.size > 0 && (
-              <div className="space-y-2">
-                <Button
-                  onClick={handleGeocoding}
-                  disabled={isGeocoding}
-                  className="w-full"
-                >
-                  {isGeocoding ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : null}
-                  Geocode {placesToGeocode.size} places
-                </Button>
+            <GeocodingSection
+              placesToGeocode={placesToGeocode}
+              isGeocoding={isGeocoding}
+              progress={geocodingProgress}
+              onStartAction={handleGeocoding}
+              onCancelAction={() => {
+                geocodingRef.current.shouldContinue = false;
+                setIsGeocoding(false);
+              }}
+            />
 
-                {/* Progress indicator */}
-                {isGeocoding && (
-                  <div className="space-y-2 p-2 bg-gray-50 rounded-md">
-                    <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-600 transition-all duration-300"
-                        style={{
-                          width: `${
-                            (geocodingProgress.processed /
-                              geocodingProgress.total) *
-                            100
-                          }%`,
-                        }}
-                      />
-                    </div>
-                    <div className="text-xs space-y-1">
-                      <div className="text-gray-600">
-                        Processing {geocodingProgress.processed} of{" "}
-                        {geocodingProgress.total} places
-                      </div>
-                      {geocodingProgress.currentPlace && (
-                        <div className="text-gray-500 truncate">
-                          {geocodingProgress.currentPlace}
-                        </div>
-                      )}
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        geocodingRef.current.shouldContinue = false;
-                        setIsGeocoding(false);
-                      }}
-                      className="w-full"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
+            <RootPersonDialog
+              open={dialogOpen}
+              onOpenChangeAction={setDialogOpen}
+              rootPerson={rootPerson}
+              people={people}
+              isCalculating={isCalculating}
+              searchTerm={searchTerm}
+              onSearchChangeAction={setSearchTerm}
+              onSelectPersonAction={setRootPerson}
+            />
 
-            {/* Root person selection */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Root Person</label>
-              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between">
-                    {rootPerson
-                      ? people.find((p) => p.id === rootPerson)?.name ||
-                        "Unknown"
-                      : "Choose Root Person..."}
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl">
-                  <DialogHeader>
-                    <DialogTitle>Choose Person for Root</DialogTitle>
-                  </DialogHeader>
-                  <div className="flex gap-4">
-                    <div className="flex-1">
-                      <Command className="rounded-lg border shadow-md">
-                        <CommandInput
-                          placeholder="Search people..."
-                          value={searchTerm}
-                          onValueChange={setSearchTerm}
-                        />
-                        <CommandList className="max-h-[300px] overflow-y-auto">
-                          <CommandEmpty>No person found.</CommandEmpty>
-                          <CommandGroup>
-                            {filteredPeople.map((person) => (
-                              <CommandItem
-                                key={person.id}
-                                value={person.name}
-                                className="cursor-pointer hover:bg-accent pointer-events-auto"
-                                onSelect={() => {
-                                  setRootPerson(person.id);
-                                  setSearchTerm("");
-                                  setDialogOpen(false);
-                                }}
-                                disabled={isCalculating}
-                              >
-                                <div
-                                  className="flex items-center gap-2 w-full"
-                                  onClick={() => {
-                                    setRootPerson(person.id);
-                                    setSearchTerm("");
-                                  }}
-                                >
-                                  {rootPerson === person.id && (
-                                    <Check className="h-4 w-4 text-primary shrink-0" />
-                                  )}
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      {person.name}
-                                      {isCalculating &&
-                                        rootPerson === person.id && (
-                                          <Loader2 className="w-4 h-4 animate-spin" />
-                                        )}
-                                    </div>
-                                    <div className="text-sm text-muted-foreground">
-                                      {person.events
-                                        .filter(
-                                          (e) =>
-                                            e.type === "BIRT" && e.date.year
-                                        )
-                                        .map((e) => e.date.year)
-                                        .join(", ")}
-                                    </div>
-                                  </div>
-                                </div>
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </div>
-                    <div className="flex flex-col gap-2 min-w-[120px]">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setRootPerson(null);
-                          setDialogOpen(false);
-                        }}
-                      >
-                        Clear Selection
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            {/* Event types */}
             <EventTypeFilter
               selectedTypes={selectedEventTypes}
               onChangeAction={setSelectedEventTypes}
             />
 
-            {/* Year range */}
             <YearRangeFilter value={yearRange} onChangeAction={setYearRange} />
 
-            {/* Filter section - only show when root person is selected */}
             {rootPerson && (
               <RelationshipFilter
                 relationFilter={relationFilter}
@@ -928,13 +730,7 @@ export default function FamilyMap() {
           </div>
         </div>
 
-        {/* Collapse button at the bottom of the panel */}
-        <div
-          className={cn(
-            "border-t", // Add top border
-            isControlsCollapsed ? "hidden" : "" // Hide when collapsed
-          )}
-        >
+        <div className={cn("border-t", isControlsCollapsed ? "hidden" : "")}>
           <Button
             variant="ghost"
             size="sm"
@@ -945,7 +741,6 @@ export default function FamilyMap() {
           </Button>
         </div>
 
-        {/* Expand button (only shown when collapsed) */}
         {isControlsCollapsed && (
           <Button
             variant="outline"
@@ -958,7 +753,6 @@ export default function FamilyMap() {
         )}
       </div>
 
-      {/* Keep only the bottom-right zoom controls */}
       <div className="absolute bottom-8 right-4 z-[1000] bg-white rounded-lg shadow-lg">
         <div className="flex flex-col gap-2 p-2">
           <Button
@@ -1011,10 +805,8 @@ export default function FamilyMap() {
           <MarkerLayer
             events={filteredEvents}
             onSelectAction={(person, event) => {
-              // First set the selected person so the card shows immediately
               setSelectedPerson({ person, event });
 
-              // Then process the location people
               const peopleAtLocation = Array.from(
                 filteredEvents
                   .filter(
@@ -1064,10 +856,8 @@ export default function FamilyMap() {
           )}
         >
           <div className="flex flex-col h-full">
-            {/* Header section */}
             <div className="sticky top-0 z-10 bg-white border-b mb-2">
               <div className="p-4">
-                {/* Name and close button row */}
                 <div className="flex justify-between items-start gap-4">
                   <div className="flex items-center gap-2">
                     {locationPeople.length > 1 && (
@@ -1082,7 +872,7 @@ export default function FamilyMap() {
                           setCurrentLocationIndex(newIndex);
                           setSelectedPerson({
                             person: newPerson.person,
-                            event: newPerson.events[0], // Show first event by default
+                            event: newPerson.events[0],
                           });
                         }}
                         className="h-8 w-8 p-0"
@@ -1109,7 +899,7 @@ export default function FamilyMap() {
                           setCurrentLocationIndex(newIndex);
                           setSelectedPerson({
                             person: newPerson.person,
-                            event: newPerson.events[0], // Show first event by default
+                            event: newPerson.events[0],
                           });
                         }}
                         className="h-8 w-8 p-0"
@@ -1133,7 +923,6 @@ export default function FamilyMap() {
                   </Button>
                 </div>
 
-                {/* Relationship and Set as Root row */}
                 <div className="flex justify-between items-center mt-1">
                   {getRelationship(selectedPerson.person.id)?.relationship && (
                     <div className="text-sm font-medium text-blue-600">
@@ -1181,9 +970,7 @@ export default function FamilyMap() {
               </div>
             </div>
 
-            {/* Content with padding */}
             <div className="space-y-4 px-4 pb-4">
-              {/* Parents section */}
               {selectedPerson.person.parents.length > 0 && (
                 <div className="bg-gray-50 p-2 rounded-lg">
                   <h4 className="font-medium text-gray-900 mb-2">Parents</h4>
@@ -1196,10 +983,8 @@ export default function FamilyMap() {
                             key={parentId}
                             className="w-full text-left px-2 py-1 hover:bg-gray-100 rounded-md text-blue-600 hover:text-blue-800"
                             onClick={() => {
-                              // Always show the parent card, even if no geocoded events
                               setSelectedPerson({
                                 person: parent,
-                                // Try to find a geocoded event, but fall back to first event
                                 event:
                                   parent.events.find(
                                     (e) =>
@@ -1208,7 +993,6 @@ export default function FamilyMap() {
                                       e.place !== "Unknown"
                                   ) || parent.events[0],
                               });
-                              // Clear any temporary highlight when selecting new person
                               setTemporaryHighlight(null);
                             }}
                           >
@@ -1221,9 +1005,7 @@ export default function FamilyMap() {
                 </div>
               )}
 
-              {/* Events section */}
               <div className="space-y-2">
-                {/* Birth event */}
                 {selectedPerson.person.events
                   .filter((event) => event.type === "BIRT")
                   .map((event, index) => (
@@ -1256,7 +1038,6 @@ export default function FamilyMap() {
                     </div>
                   ))}
 
-                {/* Death event */}
                 {selectedPerson.person.events
                   .filter((event) => event.type === "DEAT")
                   .map((event, index) => (
@@ -1289,7 +1070,6 @@ export default function FamilyMap() {
                     </div>
                   ))}
 
-                {/* Residence events */}
                 {selectedPerson.person.events.some(
                   (event) => event.type === "RESI"
                 ) && (
@@ -1338,7 +1118,6 @@ export default function FamilyMap() {
                 )}
               </div>
 
-              {/* Children section */}
               {selectedPerson.person.children.length > 0 && (
                 <div className="bg-gray-50 p-3 rounded-lg">
                   <h4 className="font-medium text-gray-900 mb-2">Children</h4>
@@ -1351,10 +1130,8 @@ export default function FamilyMap() {
                             key={childId}
                             className="w-full text-left px-2 py-1 hover:bg-gray-100 rounded-md text-blue-600 hover:text-blue-800"
                             onClick={() => {
-                              // Always show the child card, even if no geocoded events
                               setSelectedPerson({
                                 person: child,
-                                // Try to find a geocoded event, but fall back to first event
                                 event:
                                   child.events.find(
                                     (e) =>
@@ -1363,7 +1140,6 @@ export default function FamilyMap() {
                                       e.place !== "Unknown"
                                   ) || child.events[0],
                               });
-                              // Clear any temporary highlight when selecting new person
                               setTemporaryHighlight(null);
                             }}
                           >
@@ -1376,7 +1152,6 @@ export default function FamilyMap() {
                 </div>
               )}
 
-              {/* Ancestor Groups section */}
               <div className="bg-gray-50 p-3 rounded-lg">
                 <h4 className="text-sm font-medium text-gray-700 mb-2">
                   2x Great-Grandparent Groups
@@ -1417,7 +1192,6 @@ export default function FamilyMap() {
         </Card>
       )}
 
-      {/* Move AncestorFilterPanel to the end of the component */}
       {rootPerson && (
         <AncestorFilterPanel
           open={ancestorFilterOpen}
@@ -1430,7 +1204,6 @@ export default function FamilyMap() {
           relationships={relationships}
           ahnentafelNumbers={ahnentafelNumbers}
           onSelectPerson={(person) => {
-            // Find a valid event to show (geocoded event or first event)
             const event =
               person.events.find(
                 (e) =>
@@ -1444,7 +1217,6 @@ export default function FamilyMap() {
         />
       )}
 
-      {/* Add report dialog */}
       {geocodingReport && (
         <Dialog
           open={!!geocodingReport}
