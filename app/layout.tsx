@@ -3,6 +3,7 @@ import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import { FamilyMapProvider } from "@/contexts/FamilyMapContext";
+import { TreeProvider } from "@/contexts/TreeContext";
 
 export const metadata = {
   title: "Family History Map",
@@ -17,7 +18,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <FamilyMapProvider>{children}</FamilyMapProvider>
+        <TreeProvider>
+          <FamilyMapProvider>{children}</FamilyMapProvider>
+        </TreeProvider>
       </body>
     </html>
   );

@@ -251,3 +251,62 @@
 .leaflet-interactive {
   outline: none !important;
 }
+
+/* Add these new styles */
+.custom-cluster-icon {
+  background: none;
+  border: none;
+}
+
+.cluster-marker {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 14px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* Update existing marker styles */
+.marker-ancestor {
+  animation: pulse-border-ancestor 2s infinite;
+}
+
+.marker-descendant {
+  animation: pulse-border-descendant 2s infinite;
+}
+
+/* Keep existing animations */
+@keyframes pulse-border-ancestor {
+  0% {
+    stroke-width: 3;
+    stroke: #eab308;
+  }
+  50% {
+    stroke-width: 4;
+    stroke: #fbbf24;
+  }
+  100% {
+    stroke-width: 3;
+    stroke: #eab308;
+  }
+}
+
+@keyframes pulse-border-descendant {
+  0% {
+    stroke-width: 3;
+    stroke: #8b5cf6;
+  }
+  50% {
+    stroke-width: 4;
+    stroke: #a78bfa;
+  }
+  100% {
+    stroke-width: 3;
+    stroke: #8b5cf6;
+  }
+}

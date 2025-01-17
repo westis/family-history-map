@@ -68,3 +68,17 @@ export interface GeoJSONCollection {
   type: "FeatureCollection";
   features: GeoJSONFeature[];
 }
+
+export interface EventWithTree extends Event {
+  treeId: string;
+  treeColor: string;
+}
+
+export interface PersonWithTree extends Person {
+  treeId: string;
+}
+
+export interface FilteredEvent {
+  person: PersonWithTree;
+  event: EventWithTree;
+}

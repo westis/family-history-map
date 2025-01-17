@@ -1,20 +1,19 @@
 import L from "leaflet";
 
 declare module "leaflet" {
-  export interface MarkerClusterGroupOptions {
-    spiderfyOnMaxZoom?: boolean;
-    zoomToBoundsOnClick?: boolean;
-    disableClusteringAtZoom?: number;
+  interface MarkerCluster extends L.Layer {
+    getChildCount(): number;
+    getAllChildMarkers(): L.Marker[];
+  }
+
+  interface MarkerClusterGroupOptions extends L.LayerOptions {
     maxClusterRadius?: number;
+    spiderfyOnMaxZoom?: boolean;
+    disableClusteringAtZoom?: number;
     iconCreateFunction?: (cluster: MarkerCluster) => L.DivIcon;
   }
 
-  export class MarkerCluster extends L.Layer {
-    getAllChildMarkers(): L.Marker[];
-    getLatLng(): L.LatLng;
-  }
-
-  export class MarkerClusterGroup extends L.FeatureGroup {
+  class MarkerClusterGroup extends L.FeatureGroup {
     constructor(options?: MarkerClusterGroupOptions);
     addLayer(layer: L.Layer): this;
     removeLayer(layer: L.Layer): this;

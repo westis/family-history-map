@@ -40,6 +40,8 @@ import {
   EventType,
   RelationFilter,
   GeoJSONCollection,
+  PersonWithTree,
+  FilteredEvent,
 } from "@/app/utils/types";
 import { calculateRelationships } from "@/app/utils/relationships";
 import {
@@ -54,11 +56,21 @@ import { YearRangeFilter } from "@/components/ui/control-panel/YearRangeFilter";
 import { RelationshipFilter } from "@/components/ui/control-panel/RelationshipFilter";
 import { GeocodingSection } from "@/components/ui/control-panel/GeocodingSection";
 import { RootPersonDialog } from "@/components/ui/control-panel/RootPersonDialog";
-import { PersonCard } from "@/components/person/PersonCard";
+import PersonCard from "@/components/person/PersonCard";
 import { GeocodingReport } from "@/components/dialogs/GeocodingReport";
 import { InfoPanel } from "@/components/dialogs/InfoPanel";
 import { LayerControl } from "@/components/ui/control-panel/LayerControl";
 import { SearchBox } from "@/components/ui/control-panel/SearchBox";
+import { TreeManager } from "@/components/ui/control-panel/TreeManager";
+import { TreeOverlaps } from "@/components/ui/TreeOverlaps";
+
+const DEFAULT_COLORS = [
+  "#2563eb", // Main tree - blue
+  "#dc2626", // Red
+  "#16a34a", // Green
+  "#9333ea", // Purple
+  "#ea580c", // Orange
+];
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
@@ -73,6 +85,51 @@ interface AncestorFilterPanelProps {
   relationships: Map<string, RelationshipInfo>;
   ahnentafelNumbers: Map<string, number[]>;
   onSelectPerson: (person: Person) => void;
+}
+
+interface TreeData {
+  id: string;
+  name: string;
+  color: string;
+  isMain: boolean;
+  people: Person[];
+  geocodingStatus: {
+    processed: number;
+    total: number;
+    placesToGeocode: Set<string>;
+  };
+}
+
+// Add this interface for the performance memory
+interface PerformanceMemory {
+  usedJSHeapSize: number;
+  totalJSHeapSize: number;
+  jsHeapSizeLimit: number;
+}
+
+// Update the logMemoryUsage function
+const logMemoryUsage = () => {
+  if (
+    typeof window !== "undefined" &&
+    (window.performance as unknown as { memory: PerformanceMemory }).memory
+  ) {
+    const memory = (
+      window.performance as unknown as { memory: PerformanceMemory }
+    ).memory;
+    console.log("Memory usage:", {
+      usedJSHeapSize: Math.round(memory.usedJSHeapSize / 1024 / 1024) + "MB",
+      totalJSHeapSize: Math.round(memory.totalJSHeapSize / 1024 / 1024) + "MB",
+      limit: Math.round(memory.jsHeapSizeLimit / 1024 / 1024) + "MB",
+    });
+  }
+};
+
+// Add interface for parish feature
+interface ParishFeature {
+  properties: {
+    NAMN?: string;
+    [key: string]: unknown;
+  };
 }
 
 function AncestorFilterPanel({
@@ -469,6 +526,103 @@ function MapEventHandler({
   return null;
 }
 
+interface StyleOptions {
+  weight: number;
+  color: string;
+  opacity: number;
+  fillOpacity: number;
+}
+
+// Define the debounce function specifically for StyleOptions
+const debounceStyle = (
+  func: (style: StyleOptions) => void,
+  wait: number
+): ((style: StyleOptions) => void) => {
+  let timeout: NodeJS.Timeout;
+  return (style: StyleOptions) => {
+    const later = () => {
+      clearTimeout(timeout);
+      func(style);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+};
+
+// Add memoization for the parish layer to prevent unnecessary re-renders
+const MemoizedParishLayer = React.memo(
+  function ParishLayer({
+    parishData,
+    mapRef,
+  }: {
+    parishData: GeoJSONCollection;
+    mapRef: React.MutableRefObject<L.Map | null>;
+  }) {
+    return (
+      <GeoJSON
+        data={parishData}
+        style={{
+          color: "#374151",
+          weight: 1,
+          opacity: 0.5,
+          fillOpacity: 0.1,
+          pane: "parishPane",
+        }}
+        onEachFeature={(feature, layer) => {
+          const name = feature.properties?.NAMN;
+          if (name) {
+            layer.bindTooltip(name, {
+              permanent: false,
+              direction: "auto",
+              className: "parish-tooltip",
+              offset: [0, -5],
+            });
+          }
+
+          const debouncedStyle = debounceStyle((style: StyleOptions) => {
+            const parishPane = mapRef.current?.getPane("parishPane");
+            if (parishPane) {
+              parishPane.style.pointerEvents = "auto";
+            }
+            (layer as L.Path).setStyle(style);
+          }, 16);
+
+          const resetStyle = debounceStyle((style: StyleOptions) => {
+            const parishPane = mapRef.current?.getPane("parishPane");
+            if (parishPane) {
+              parishPane.style.pointerEvents = "none";
+            }
+            (layer as L.Path).setStyle(style);
+          }, 16);
+
+          layer.on({
+            mouseover: () => {
+              debouncedStyle({
+                weight: 3,
+                color: "#1d4ed8",
+                opacity: 1,
+                fillOpacity: 0.2,
+              });
+            },
+            mouseout: () => {
+              resetStyle({
+                weight: 1,
+                color: "#374151",
+                opacity: 0.5,
+                fillOpacity: 0.1,
+              });
+            },
+          });
+        }}
+      />
+    );
+  },
+  (prevProps, nextProps) => {
+    // Only re-render if parishData changes
+    return prevProps.parishData === nextProps.parishData;
+  }
+);
+
 export default function FamilyMap() {
   const [people, setPeople] = useState<Person[]>([]);
   const [yearRange, setYearRange] = useState<[number, number]>([1800, 2024]);
@@ -518,12 +672,10 @@ export default function FamilyMap() {
     processed: 0,
     total: 0,
     currentPlace: "",
+    treeId: "",
   });
   const [geocodingReport, setGeocodingReport] =
     useState<GeocodingReportType | null>(null);
-  const [placesToGeocode, setPlacesToGeocode] = useState<Set<string>>(
-    new Set()
-  );
   const geocodingRef = useRef({ shouldContinue: true });
   const [showParishes, setShowParishes] = useState(false);
   const [parishData, setParishData] = useState<GeoJSONCollection | null>(null);
@@ -531,57 +683,103 @@ export default function FamilyMap() {
     [number, number] | null
   >(null);
   const [isLoadingParishes, setIsLoadingParishes] = useState(false);
+  const [trees, setTrees] = useState<TreeData[]>([]);
+
+  const loadParishData = async () => {
+    try {
+      setIsLoadingParishes(true);
+      const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
+      const response = await fetch(`${basePath}/data/svenska-socknar.geojson`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+
+      // Simplify geometries to reduce memory usage
+      data.features = data.features.map((feature: ParishFeature) => ({
+        ...feature,
+        properties: {
+          NAMN: feature.properties.NAMN,
+        },
+      }));
+
+      setParishData(data);
+    } catch (error) {
+      console.error("Error loading parish data:", error);
+    } finally {
+      setIsLoadingParishes(false);
+    }
+  };
 
   const filteredEvents = React.useMemo(() => {
-    return people.flatMap((person) => {
-      if (rootPerson) {
-        const relationship = relationships.get(person.id);
-        const personGroups = getAncestorGroupInfo(
-          person.id,
-          ahnentafelNumbers,
-          relationships
-        );
+    const mainTree = trees.find((tree) => tree.isMain);
+    if (!mainTree) return [];
 
-        const matchesRelationFilter = (() => {
-          if (relationFilter === "all") return true;
-          if (!relationship) return false;
+    return trees.flatMap((tree) => {
+      return tree.people.flatMap((person) => {
+        // Add tree info to person
+        const personWithTree: PersonWithTree = {
+          ...person,
+          treeId: tree.id,
+        };
 
-          if (relationship.type === "root") return true;
-
-          if (relationFilter === "ancestors")
-            return relationship.type === "ancestor";
-          if (relationFilter === "descendants")
-            return relationship.type === "descendant";
-
-          return false;
-        })();
-
-        const matchesAncestorFilter =
-          ancestorFilter.selectedAncestors.size === 0 ||
-          personGroups.some(({ number }) =>
-            ancestorFilter.selectedAncestors.has(number)
+        if (tree.isMain && rootPerson) {
+          const relationship = relationships.get(person.id);
+          const personGroups = getAncestorGroupInfo(
+            person.id,
+            ahnentafelNumbers,
+            relationships
           );
 
-        if (!matchesRelationFilter || !matchesAncestorFilter) {
-          return [];
-        }
-      }
+          const matchesRelationFilter = (() => {
+            if (relationFilter === "all") return true;
+            if (!relationship) return false;
 
-      return person.events
-        .filter(
-          (event) =>
-            event.date.year !== null &&
-            event.date.year >= yearRange[0] &&
-            event.date.year <= yearRange[1] &&
-            event.coordinates[0] !== 0 &&
-            event.coordinates[1] !== 0 &&
-            event.place !== "Unknown" &&
-            selectedEventTypes.includes(event.type)
-        )
-        .map((event) => ({ person, event }));
+            if (relationship.type === "root") return true;
+
+            if (relationFilter === "ancestors")
+              return relationship.type === "ancestor";
+            if (relationFilter === "descendants")
+              return relationship.type === "descendant";
+
+            return false;
+          })();
+
+          const matchesAncestorFilter =
+            ancestorFilter.selectedAncestors.size === 0 ||
+            personGroups.some(({ number }) =>
+              ancestorFilter.selectedAncestors.has(number)
+            );
+
+          if (!matchesRelationFilter || !matchesAncestorFilter) {
+            return [];
+          }
+        }
+
+        return person.events
+          .filter(
+            (event) =>
+              event.date.year !== null &&
+              event.date.year >= yearRange[0] &&
+              event.date.year <= yearRange[1] &&
+              event.coordinates[0] !== 0 &&
+              event.coordinates[1] !== 0 &&
+              event.place !== "Unknown" &&
+              selectedEventTypes.includes(event.type)
+          )
+          .map((event) => ({
+            person: personWithTree,
+            event: {
+              ...event,
+              treeId: tree.id,
+              treeColor: tree.color,
+            },
+          }));
+      });
     });
   }, [
-    people,
+    trees,
     yearRange,
     selectedEventTypes,
     rootPerson,
@@ -620,16 +818,18 @@ export default function FamilyMap() {
     }
   }, [rootPerson, people]);
 
-  const handleGeocoding = async () => {
-    if (placesToGeocode.size === 0) return;
+  const handleGeocoding = async (treeId: string) => {
+    const tree = trees.find((t) => t.id === treeId);
+    if (!tree || tree.geocodingStatus.placesToGeocode.size === 0) return;
 
     setIsGeocoding(true);
     geocodingRef.current.shouldContinue = true;
 
     setGeocodingProgress({
       processed: 0,
-      total: placesToGeocode.size,
+      total: tree.geocodingStatus.placesToGeocode.size,
       currentPlace: "",
+      treeId: tree.id,
     });
 
     const geocodedPlaces = new Map<string, [number, number]>();
@@ -637,13 +837,11 @@ export default function FamilyMap() {
     let processed = 0;
     let successCount = 0;
 
-    const placesArray = Array.from(placesToGeocode);
+    const placesArray = Array.from(tree.geocodingStatus.placesToGeocode);
 
     for (let i = 0; i < placesArray.length; i++) {
       if (!geocodingRef.current.shouldContinue) {
         console.log("Geocoding cancelled");
-        const remainingPlaces = new Set(placesArray.slice(i));
-        setPlacesToGeocode(remainingPlaces);
         break;
       }
 
@@ -651,8 +849,9 @@ export default function FamilyMap() {
 
       setGeocodingProgress({
         processed,
-        total: placesToGeocode.size,
+        total: tree.geocodingStatus.placesToGeocode.size,
         currentPlace: place,
+        treeId: tree.id,
       });
 
       try {
@@ -661,24 +860,47 @@ export default function FamilyMap() {
           geocodedPlaces.set(place, coordinates);
           successCount++;
 
-          setPeople((currentPeople) => {
-            const updatedPeople = currentPeople.map((person) => ({
-              ...person,
-              events: person.events.map((event) => {
-                if (event.place === place) {
-                  return { ...event, coordinates };
-                }
-                return event;
-              }),
-            }));
-            return updatedPeople;
-          });
+          setTrees((currentTrees) =>
+            currentTrees.map((t) => {
+              if (t.id !== tree.id) return t;
 
-          setPlacesToGeocode((current) => {
-            const updated = new Set(current);
-            updated.delete(place);
-            return updated;
-          });
+              return {
+                ...t,
+                people: t.people.map((person) => ({
+                  ...person,
+                  events: person.events.map((event) => {
+                    if (event.place === place) {
+                      return { ...event, coordinates };
+                    }
+                    return event;
+                  }),
+                })),
+                geocodingStatus: {
+                  ...t.geocodingStatus,
+                  placesToGeocode: new Set(
+                    Array.from(t.geocodingStatus.placesToGeocode).filter(
+                      (p) => p !== place
+                    )
+                  ),
+                },
+              };
+            })
+          );
+
+          // Also update main people state if this is the main tree
+          if (tree.isMain) {
+            setPeople((currentPeople) =>
+              currentPeople.map((person) => ({
+                ...person,
+                events: person.events.map((event) => {
+                  if (event.place === place) {
+                    return { ...event, coordinates };
+                  }
+                  return event;
+                }),
+              }))
+            );
+          }
         } else {
           failedPlaces.push(place);
         }
@@ -693,10 +915,10 @@ export default function FamilyMap() {
     setIsGeocoding(false);
     geocodingRef.current.shouldContinue = true;
 
-    if (processed > 0 && geocodingRef.current.shouldContinue) {
+    if (processed > 0) {
       setGeocodingReport({
         failedPlaces,
-        totalAttempted: placesToGeocode.size,
+        totalAttempted: tree.geocodingStatus.placesToGeocode.size,
         successCount,
       });
     }
@@ -716,27 +938,14 @@ export default function FamilyMap() {
     }, 2000);
   };
 
-  const loadParishData = async () => {
-    try {
-      setIsLoadingParishes(true);
-      const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
-
-      const response = await fetch(`${basePath}/data/svenska-socknar.geojson`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      setParishData(data);
-    } catch (error) {
-      console.error("Error loading parish data:", error);
-    } finally {
-      setIsLoadingParishes(false);
-    }
-  };
-
   useEffect(() => {
     if (showParishes && !parishData) {
-      loadParishData();
+      console.log("Before loading parish data:");
+      logMemoryUsage();
+      loadParishData().then(() => {
+        console.log("After loading parish data:");
+        logMemoryUsage();
+      });
     }
   }, [showParishes, parishData]);
 
@@ -748,12 +957,81 @@ export default function FamilyMap() {
           map.createPane("parishPane");
           const parishPane = map.getPane("parishPane");
           if (parishPane) {
-            parishPane.style.zIndex = "200"; // Lower than marker pane (400)
+            parishPane.style.zIndex = "200";
+            parishPane.style.pointerEvents = "none";
+            parishPane.style.willChange = "transform";
+            parishPane.style.transform = "translate3d(0,0,0)";
+            parishPane.style.backfaceVisibility = "hidden";
           }
         }
       }
     }
   }, [showParishes]);
+
+  useEffect(() => {
+    if (!showParishes && parishData) {
+      // Clear parish data when layer is disabled
+      setParishData(null);
+      console.log("After clearing parish data:");
+      logMemoryUsage();
+    }
+  }, [showParishes]);
+
+  // Add this memoized lookup map for quick coordinate access
+  const coordinateMap = React.useMemo(() => {
+    const map = new Map<string, FilteredEvent[]>();
+
+    filteredEvents.forEach((event) => {
+      const key = `${event.event.coordinates[0]},${event.event.coordinates[1]}`;
+      if (!map.has(key)) {
+        map.set(key, []);
+      }
+      map.get(key)!.push(event);
+    });
+
+    return map;
+  }, [filteredEvents]);
+
+  // Optimize the marker click handler
+  const handleMarkerClick = useCallback(
+    (person: Person, event: Event) => {
+      console.time("total-selection-process");
+      performance.mark("selection-start");
+
+      // Use a single batch update
+      const key = `${event.coordinates[0]},${event.coordinates[1]}`;
+      const eventsAtLocation = coordinateMap.get(key) || [];
+
+      const peopleAtLocation = Array.from(
+        eventsAtLocation.reduce((map, e) => {
+          if (!map.has(e.person.id)) {
+            map.set(e.person.id, {
+              person: e.person,
+              events: [e.event],
+            });
+          } else {
+            map.get(e.person.id)!.events.push(e.event);
+          }
+          return map;
+        }, new Map<string, { person: Person; events: Event[] }>())
+      ).map((entry) => entry[1]);
+
+      const currentIndex = peopleAtLocation.findIndex(
+        (p) => p.person.id === person.id
+      );
+
+      // Batch the state updates
+      queueMicrotask(() => {
+        setSelectedPerson({ person, event });
+        setLocationPeople(peopleAtLocation);
+        setCurrentLocationIndex(currentIndex);
+      });
+
+      performance.mark("selection-end");
+      console.timeEnd("total-selection-process");
+    },
+    [coordinateMap]
+  );
 
   return (
     <div className="h-screen w-screen overflow-hidden relative">
@@ -816,7 +1094,27 @@ export default function FamilyMap() {
             />
 
             <FileUpload
-              onUploadAction={setPeople}
+              isFirstTree={trees.length === 0}
+              onUploadAction={(people, placesToGeocode, isMain) => {
+                const newTree: TreeData = {
+                  id: crypto.randomUUID(),
+                  name: isMain ? "Main Tree" : `Tree ${trees.length + 1}`,
+                  people,
+                  color: DEFAULT_COLORS[trees.length % DEFAULT_COLORS.length],
+                  isMain,
+                  geocodingStatus: {
+                    processed: 0,
+                    total: 0,
+                    placesToGeocode,
+                  },
+                };
+                setTrees((current) => [...current, newTree]);
+
+                // If this is the main tree, also update people state
+                if (isMain) {
+                  setPeople(people);
+                }
+              }}
               onYearRangeUpdateAction={(minYear, maxYear) =>
                 setYearRange([minYear, maxYear])
               }
@@ -826,11 +1124,9 @@ export default function FamilyMap() {
                   console.log("Geocoding cache cleared");
                 }
               }}
-              setPlacesToGeocodeAction={setPlacesToGeocode}
             />
 
             <GeocodingSection
-              placesToGeocode={placesToGeocode}
               isGeocoding={isGeocoding}
               progress={geocodingProgress}
               onStartAction={handleGeocoding}
@@ -884,6 +1180,24 @@ export default function FamilyMap() {
             <LayerControl
               showParishes={showParishes}
               onChangeAction={setShowParishes}
+            />
+
+            <TreeManager
+              onTreeSelect={(treeId) => {
+                const selectedTree = trees.find((t) => t.id === treeId);
+                if (selectedTree?.isMain) {
+                  setPeople(selectedTree.people);
+                }
+              }}
+              onTreeRemove={(treeId) => {
+                setTrees((current) => current.filter((t) => t.id !== treeId));
+                // If removing main tree, clear people state
+                const removedTree = trees.find((t) => t.id === treeId);
+                if (removedTree?.isMain) {
+                  setPeople([]);
+                  setRootPerson(null);
+                }
+              }}
             />
           </div>
         </div>
@@ -961,80 +1275,11 @@ export default function FamilyMap() {
             tileSize={256}
           />
           {showParishes && parishData && !isLoadingParishes && (
-            <GeoJSON
-              data={parishData}
-              style={{
-                color: "#374151",
-                weight: 1,
-                opacity: 0.5,
-                fillOpacity: 0.1,
-                pane: "parishPane",
-                className: "parish-layer",
-              }}
-              onEachFeature={(feature, layer) => {
-                const name = feature.properties?.NAMN;
-                if (name) {
-                  layer.bindTooltip(name, {
-                    permanent: false,
-                    direction: "auto",
-                    className: "parish-tooltip",
-                    sticky: true,
-                  });
-                }
-
-                layer.on({
-                  mouseover: (e) => {
-                    const layer = e.target;
-                    layer.setStyle({
-                      weight: 3,
-                      color: "#1d4ed8",
-                      opacity: 1,
-                      fillOpacity: 0.2,
-                    });
-                  },
-                  mouseout: (e) => {
-                    const layer = e.target;
-                    layer.setStyle({
-                      weight: 1,
-                      color: "#374151",
-                      opacity: 0.5,
-                      fillOpacity: 0.1,
-                    });
-                  },
-                });
-              }}
-            />
+            <MemoizedParishLayer parishData={parishData} mapRef={mapRef} />
           )}
           <MarkerLayer
             events={filteredEvents}
-            onSelectAction={(person, event) => {
-              setSelectedPerson({ person, event });
-
-              const peopleAtLocation = Array.from(
-                filteredEvents
-                  .filter(
-                    (e) =>
-                      e.event.coordinates[0] === event.coordinates[0] &&
-                      e.event.coordinates[1] === event.coordinates[1]
-                  )
-                  .reduce((map, e) => {
-                    if (!map.has(e.person.id)) {
-                      map.set(e.person.id, {
-                        person: e.person,
-                        events: [e.event],
-                      });
-                    } else {
-                      map.get(e.person.id)!.events.push(e.event);
-                    }
-                    return map;
-                  }, new Map<string, { person: Person; events: Event[] }>())
-              ).map((entry) => entry[1]);
-
-              setLocationPeople(peopleAtLocation);
-              setCurrentLocationIndex(
-                peopleAtLocation.findIndex((p) => p.person.id === person.id)
-              );
-            }}
+            onSelectAction={handleMarkerClick}
             activeCoordinates={activeCoordinates}
             rootPerson={rootPerson}
             relationships={relationships}
@@ -1062,6 +1307,11 @@ export default function FamilyMap() {
               onClose={() => setContextMenuPosition(null)}
             />
           )}
+          <TreeOverlaps
+            events={filteredEvents}
+            onSelectLocation={handleLocationClick}
+            trees={trees}
+          />
         </MapContainer>
       )}
 

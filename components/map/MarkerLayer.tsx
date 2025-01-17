@@ -1,78 +1,26 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
-import { cn } from "@/lib/utils";
+import {
+  FilteredEvent,
+  AncestorFilter,
+  RelationshipInfo,
+} from "@/app/utils/types";
+import { useTrees } from "@/contexts/TreeContext";
 
-// Types and interfaces
-interface Event {
-  type: "BIRT" | "DEAT" | "RESI";
-  date: {
-    from?: string;
-    to?: string;
-    year: number | null;
-  };
-  place: string;
-  coordinates: [number, number];
-}
-
-interface Person {
-  id: string;
-  name: string;
-  sex: "M" | "F" | null;
-  events: Event[];
-  parents: string[];
-  children: string[];
-  spouses: string[];
-  relationship?: string;
-}
-
-interface RelationshipInfo {
-  relationship: string;
-  type: "ancestor" | "descendant" | "root" | "none";
-}
-
-interface AncestorFilter {
-  showAncestorNumbers: boolean;
-  selectedAncestors: Set<number>;
-}
-
-// Helper function
-function getRelationshipType(
-  personId: string,
-  rootPerson: string | null,
-  relationships: Map<string, RelationshipInfo>,
-  temporaryHighlight: {
-    personId: string;
-    type: "ancestors" | "descendants" | "both" | null;
-  } | null
-): "ancestor" | "descendant" | "none" | null {
-  if (!rootPerson) return null;
-
-  if (temporaryHighlight && temporaryHighlight.personId) {
-    const relationship = relationships.get(personId);
-    if (!relationship) return "none";
-
-    if (temporaryHighlight.type === "both") {
-      if (
-        relationship.type === "ancestor" ||
-        relationship.type === "descendant"
-      )
-        return relationship.type;
-    } else if (temporaryHighlight.type === "ancestors") {
-      return relationship.type === "ancestor" ? "ancestor" : "none";
-    } else if (temporaryHighlight.type === "descendants") {
-      return relationship.type === "descendant" ? "descendant" : "none";
-    }
-  }
-
-  return null;
+// Add interface for extended marker options
+interface ExtendedMarkerOptions extends L.MarkerOptions {
+  treeColor?: string;
 }
 
 interface MarkerLayerProps {
-  events: { person: Person; event: Event }[];
-  onSelectAction: (person: Person, event: Event) => void;
+  events: FilteredEvent[];
+  onSelectAction: (
+    person: FilteredEvent["person"],
+    event: FilteredEvent["event"]
+  ) => void;
   activeCoordinates: [number, number] | null;
   rootPerson: string | null;
   relationships: Map<string, RelationshipInfo>;
@@ -81,7 +29,7 @@ interface MarkerLayerProps {
     type: "ancestors" | "descendants" | "both" | null;
   } | null;
   setTemporaryHighlightAction: (
-    value: {
+    highlight: {
       personId: string;
       type: "ancestors" | "descendants" | "both" | null;
     } | null
@@ -89,6 +37,13 @@ interface MarkerLayerProps {
   ahnentafelNumbers: Map<string, number[]>;
   ancestorFilter: AncestorFilter;
 }
+
+// Add these constants at the top
+const EVENT_COLORS = {
+  BIRT: "#16a34a", // green
+  DEAT: "#dc2626", // red
+  RESI: "#2563eb", // blue
+};
 
 export function MarkerLayer({
   events,
@@ -102,279 +57,135 @@ export function MarkerLayer({
   ancestorFilter,
 }: MarkerLayerProps) {
   const map = useMap();
-  const markersRef = useRef<Map<string, L.CircleMarker | L.Marker>>(new Map());
-  const numberMarkersRef = useRef<Map<string, L.Marker>>(new Map());
-
-  const getAllGGNumbers = React.useCallback((n: number): number[] => {
-    const result = new Set<number>();
-
-    let current = n;
-    while (current > 0) {
-      if (current >= 16 && current <= 31) {
-        result.add(current - 15);
-      }
-      current = Math.floor(current / 2);
-    }
-
-    if (n > 0 && n < 16) {
-      const child1 = n * 2;
-      const child2 = n * 2 + 1;
-
-      if (child1 >= 16 && child1 <= 31) result.add(child1 - 15);
-      if (child2 >= 16 && child2 <= 31) result.add(child2 - 15);
-
-      if (child1 < 16) {
-        const stack = [child1];
-        while (stack.length > 0) {
-          const next = stack.pop()!;
-          const nextChild1 = next * 2;
-          const nextChild2 = next * 2 + 1;
-
-          if (nextChild1 >= 16 && nextChild1 <= 31) result.add(nextChild1 - 15);
-          if (nextChild2 >= 16 && nextChild2 <= 31) result.add(nextChild2 - 15);
-
-          if (nextChild1 < 16) stack.push(nextChild1);
-          if (nextChild2 < 16) stack.push(nextChild2);
-        }
-      }
-      if (child2 < 16) {
-        const stack = [child2];
-        while (stack.length > 0) {
-          const next = stack.pop()!;
-          const nextChild1 = next * 2;
-          const nextChild2 = next * 2 + 1;
-
-          if (nextChild1 >= 16 && nextChild1 <= 31) result.add(nextChild1 - 15);
-          if (nextChild2 >= 16 && nextChild2 <= 31) result.add(nextChild2 - 15);
-
-          if (nextChild1 < 16) stack.push(nextChild1);
-          if (nextChild2 < 16) stack.push(nextChild2);
-        }
-      }
-    }
-
-    return Array.from(result).sort((a, b) => a - b);
-  }, []);
+  const markersRef = useRef<L.MarkerClusterGroup | null>(null);
+  const { trees } = useTrees();
 
   useEffect(() => {
-    const getMarkerOptions = (
-      event: Event,
-      person: Person,
-      isActive: boolean | null,
-      relationshipType: "ancestor" | "descendant" | "none" | null,
-      numbers: number[]
-    ) => {
-      const active = isActive ?? false;
+    if (!map) return;
 
-      let baseColor =
-        event.type === "BIRT"
-          ? "#38a169"
-          : event.type === "DEAT"
-          ? "#e53e3e"
-          : "#3182ce";
+    // Remove existing markers
+    if (markersRef.current) {
+      map.removeLayer(markersRef.current);
+    }
 
-      if (ancestorFilter.showAncestorNumbers && numbers.length > 0) {
-        const colorMap: Record<number, string> = {
-          2: "#f59e0b",
-          3: "#10b981",
-          4: "#3b82f6",
-          5: "#8b5cf6",
-          6: "#ec4899",
-          7: "#f43f5e",
-          8: "#06b6d4",
-          9: "#14b8a6",
-        };
-
-        const lowestNumber = Math.min(...numbers);
-        const groupNumber = Math.floor(lowestNumber / 2) * 2;
-        if (colorMap[groupNumber]) {
-          baseColor = colorMap[groupNumber];
-        }
-      }
-
-      const opacity =
-        relationshipType === null
-          ? 0.9
-          : relationshipType === "none"
-          ? 0.15
-          : 0.9;
-
-      const borderColor =
-        relationshipType === "ancestor"
-          ? "#eab308"
-          : relationshipType === "descendant"
-          ? "#8b5cf6"
-          : "#ffffff";
-
-      return {
-        radius: active ? 10 : 8,
-        fillColor: baseColor,
-        color: borderColor,
-        weight: relationshipType === "none" ? 1 : 3,
-        opacity: relationshipType === "none" ? 0.15 : 1,
-        fillOpacity: opacity,
-        className: cn(
-          "hover:cursor-pointer",
-          relationshipType === "ancestor" && "marker-ancestor",
-          relationshipType === "descendant" && "marker-descendant",
-          ancestorFilter.showAncestorNumbers &&
-            numbers.length > 0 &&
-            "has-ancestor-number"
-        ),
-        html:
-          ancestorFilter.showAncestorNumbers && numbers.length > 0
-            ? `<div class="marker-number">${Math.min(...numbers)}</div>`
-            : "",
-        pane: "markerPane",
-      };
-    };
-
+    // Create marker cluster group
     const markers = new L.MarkerClusterGroup({
+      maxClusterRadius: 30,
       spiderfyOnMaxZoom: true,
-      zoomToBoundsOnClick: true,
       disableClusteringAtZoom: 10,
-      maxClusterRadius: 40,
-      iconCreateFunction: function (cluster: L.MarkerCluster) {
+      iconCreateFunction: (cluster: L.MarkerCluster) => {
         const markers = cluster.getAllChildMarkers();
-        const visibleMarkers = markers.filter((marker) => {
-          return (
-            marker.options &&
-            "fillOpacity" in marker.options &&
-            typeof marker.options.fillOpacity === "number" &&
-            marker.options.fillOpacity > 0.2
-          );
-        });
-
-        const uniqueLocations = new Set(
-          visibleMarkers.map((marker) => {
-            const coords = marker.getLatLng();
-            return `${coords.lat},${coords.lng}`;
-          })
+        const treeColors = new Set(
+          markers.map(
+            (m: L.Marker) => (m.options as ExtendedMarkerOptions).treeColor
+          )
         );
 
-        const count = uniqueLocations.size;
-        let size = "small";
-        if (count > 100) size = "large";
-        else if (count > 10) size = "medium";
+        let backgroundColor;
+        if (treeColors.size === 1) {
+          backgroundColor = Array.from(treeColors)[0];
+        } else {
+          backgroundColor = "#666"; // Mixed trees
+        }
 
         return L.divIcon({
-          html: `<div><span>${count}</span></div>`,
-          className: `marker-cluster marker-cluster-${size}`,
+          html: `<div class="cluster-marker" style="background-color: ${backgroundColor}">${cluster.getChildCount()}</div>`,
+          className: "custom-cluster-icon",
           iconSize: L.point(40, 40),
         });
       },
     });
 
-    const currentMarkersRef = markersRef.current;
-    const currentNumberMarkersRef = numberMarkersRef.current;
-
-    currentMarkersRef.clear();
-    currentNumberMarkersRef.forEach((marker) => map.removeLayer(marker));
-    currentNumberMarkersRef.clear();
-
-    const locationNumbers = new Map<string, Set<number>>();
-
+    // Add markers for each event
     events.forEach(({ person, event }) => {
-      const coordKey = `${event.coordinates[0]},${event.coordinates[1]}`;
-      if (ancestorFilter.showAncestorNumbers) {
-        const numbers = ahnentafelNumbers.get(person.id) || [];
-        const ggGroups = numbers.flatMap(getAllGGNumbers);
+      const relationshipInfo = relationships.get(person.id);
+      const isHighlighted =
+        temporaryHighlight?.personId === person.id ||
+        (temporaryHighlight?.type === "ancestors" &&
+          relationshipInfo?.type === "ancestor") ||
+        (temporaryHighlight?.type === "descendants" &&
+          relationshipInfo?.type === "descendant");
 
-        if (ggGroups.length > 0) {
-          const existing = locationNumbers.get(coordKey) || new Set<number>();
-          ggGroups.forEach((n) => existing.add(n));
-          locationNumbers.set(coordKey, existing);
+      // Determine marker color based on whether we have comparison trees
+      const markerColor =
+        trees.length > 1
+          ? event.treeColor // Use tree color when we have multiple trees
+          : EVENT_COLORS[event.type as keyof typeof EVENT_COLORS] || "#666"; // Use event type color for single tree
+
+      const markerOptions: ExtendedMarkerOptions = {
+        icon: L.divIcon({
+          html: `
+            <svg width="24" height="24" viewBox="0 0 24 24">
+              <circle 
+                cx="12" 
+                cy="12" 
+                r="8" 
+                fill="${markerColor}"
+                stroke-width="3"
+                class="${
+                  relationshipInfo?.type === "ancestor"
+                    ? "marker-ancestor"
+                    : relationshipInfo?.type === "descendant"
+                    ? "marker-descendant"
+                    : ""
+                }"
+                ${isHighlighted ? 'stroke="#000"' : ""}
+              />
+            </svg>
+          `,
+          className: `marker-icon ${isHighlighted ? "highlighted" : ""}`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12],
+        }),
+        treeColor: event.treeColor,
+      };
+
+      const marker = L.marker(
+        event.coordinates as [number, number],
+        markerOptions
+      ).bindTooltip(event.place, {
+        direction: "top",
+        offset: L.point(0, -8),
+        opacity: 0.9,
+      });
+
+      marker.on("click", () => {
+        onSelectAction(person, event);
+      });
+
+      marker.on("mouseover", () => {
+        if (relationshipInfo) {
+          setTemporaryHighlightAction({
+            personId: person.id,
+            type:
+              relationshipInfo.type === "ancestor"
+                ? "ancestors"
+                : "descendants",
+          });
         }
-      }
-    });
+      });
 
-    events.forEach(({ person, event }) => {
-      const isActive =
-        activeCoordinates &&
-        activeCoordinates[0] === event.coordinates[0] &&
-        activeCoordinates[1] === event.coordinates[1];
+      marker.on("mouseout", () => {
+        setTemporaryHighlightAction(null);
+      });
 
-      const relationshipType = getRelationshipType(
-        person.id,
-        rootPerson,
-        relationships,
-        temporaryHighlight
-      );
-
-      const marker = L.circleMarker(
-        [event.coordinates[0], event.coordinates[1]],
-        getMarkerOptions(
-          event,
-          person,
-          isActive,
-          relationshipType,
-          ahnentafelNumbers.get(person.id) || []
-        )
-      )
-        .bindTooltip(event.place, {
-          permanent: false,
-          direction: "top",
-          className: "marker-tooltip",
-          opacity: 0.9,
-        })
-        .on("click", (e) => {
-          L.DomEvent.stopPropagation(e);
-          onSelectAction(person, event);
-        });
-
-      const coordKey = `${event.coordinates[0]},${event.coordinates[1]}`;
-      markersRef.current.set(coordKey, marker);
       markers.addLayer(marker);
 
-      if (ancestorFilter.showAncestorNumbers) {
-        const coordKey = `${event.coordinates[0]},${event.coordinates[1]}`;
-        const numbers = locationNumbers.get(coordKey);
-
-        if (numbers && !numberMarkersRef.current.has(coordKey)) {
-          const sortedNumbers = [...numbers].sort((a, b) => a - b);
-
-          const ranges: string[] = [];
-          let rangeStart = sortedNumbers[0];
-          let prev = rangeStart;
-
-          for (let i = 1; i <= sortedNumbers.length; i++) {
-            const current = sortedNumbers[i];
-            const isLastNumber = i === sortedNumbers.length;
-
-            if (isLastNumber || current !== prev + 1) {
-              ranges.push(
-                prev === rangeStart
-                  ? rangeStart.toString().padStart(2, "0")
-                  : `${rangeStart.toString().padStart(2, "0")}-${prev
-                      .toString()
-                      .padStart(2, "0")}`
-              );
-              if (!isLastNumber) {
-                rangeStart = current;
-                prev = current;
-              }
-            } else {
-              prev = current;
-            }
-          }
-
-          const numberDiv = L.divIcon({
-            html: `<div class="marker-number">${ranges.join(", ")}</div>`,
-            className: "marker-number-container",
-            iconSize: [120, 20],
-            iconAnchor: [-10, 15],
+      // Add ancestor number if enabled
+      if (
+        ancestorFilter.showAncestorNumbers &&
+        relationshipInfo?.type === "ancestor"
+      ) {
+        const numbers = ahnentafelNumbers.get(person.id);
+        if (numbers && numbers.length > 0) {
+          const numberMarker = L.marker(event.coordinates as [number, number], {
+            icon: L.divIcon({
+              html: `<div class="ancestor-number">${numbers[0]}</div>`,
+              className: "ancestor-number-icon",
+              iconSize: [20, 20],
+              iconAnchor: [-10, 0],
+            }),
           });
-
-          const numberMarker = L.marker(
-            [event.coordinates[0], event.coordinates[1]],
-            {
-              icon: numberDiv,
-              zIndexOffset: 1000,
-              interactive: false,
-            }
-          );
-
-          numberMarkersRef.current.set(coordKey, numberMarker);
           if (ancestorFilter.showAncestorNumbers) {
             numberMarker.addTo(map);
           }
@@ -382,47 +193,28 @@ export function MarkerLayer({
       }
     });
 
+    markersRef.current = markers;
     map.addLayer(markers);
 
+    // Highlight active coordinates if any
     if (activeCoordinates) {
-      const coordKey = `${activeCoordinates[0]},${activeCoordinates[1]}`;
-      const marker = markersRef.current.get(coordKey);
-      if (marker && marker instanceof L.CircleMarker) {
-        marker.setStyle({
-          pane: "markerPane",
-          radius: 10,
-          fillOpacity: 1,
-        });
-        map.setView(activeCoordinates, 14);
-
-        const icon = marker.getElement();
-        if (icon) {
-          icon.classList.add("marker-bounce");
-          setTimeout(() => {
-            icon.classList.remove("marker-bounce");
-          }, 2000);
-        }
+      const bounds = markers.getBounds();
+      if (bounds.isValid()) {
+        map.setView(activeCoordinates, map.getZoom());
       }
     }
-
-    return () => {
-      map.removeLayer(markers);
-      currentMarkersRef.clear();
-      currentNumberMarkersRef.forEach((marker) => map.removeLayer(marker));
-      currentNumberMarkersRef.clear();
-    };
   }, [
-    map,
     events,
-    onSelectAction,
-    activeCoordinates,
-    rootPerson,
     relationships,
-    temporaryHighlight,
-    setTemporaryHighlightAction,
+    onSelectAction,
+    map,
+    rootPerson,
     ahnentafelNumbers,
     ancestorFilter,
-    getAllGGNumbers,
+    activeCoordinates,
+    temporaryHighlight,
+    setTemporaryHighlightAction,
+    trees,
   ]);
 
   return null;

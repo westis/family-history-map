@@ -1,69 +1,96 @@
 "use client";
 
+import React from "react";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Loader2 } from "lucide-react";
-
-interface GeocodingProgress {
-  processed: number;
-  total: number;
-  currentPlace: string;
-}
+import { useTrees } from "@/contexts/TreeContext";
 
 interface GeocodingSectionProps {
-  placesToGeocode: Set<string>;
   isGeocoding: boolean;
-  progress: GeocodingProgress;
-  onStartAction: () => void;
+  progress: {
+    processed: number;
+    total: number;
+    currentPlace: string;
+    treeId: string;
+  };
+  onStartAction: (treeId: string) => void;
   onCancelAction: () => void;
 }
 
 export function GeocodingSection({
-  placesToGeocode,
   isGeocoding,
   progress,
   onStartAction,
   onCancelAction,
 }: GeocodingSectionProps) {
-  if (placesToGeocode.size === 0) return null;
+  const { trees } = useTrees();
+
+  const pendingTrees = trees.filter(
+    (tree) => tree.geocodingStatus.placesToGeocode.size > 0
+  );
+
+  if (pendingTrees.length === 0) return null;
 
   return (
     <div className="space-y-2">
-      <Button onClick={onStartAction} disabled={isGeocoding} className="w-full">
-        {isGeocoding ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-        Geocode {placesToGeocode.size} places
-      </Button>
-
-      {/* Progress indicator */}
-      {isGeocoding && (
-        <div className="space-y-2 p-2 bg-gray-50 rounded-md">
-          <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-600 transition-all duration-300"
-              style={{
-                width: `${(progress.processed / progress.total) * 100}%`,
-              }}
-            />
-          </div>
-          <div className="text-xs space-y-1">
-            <div className="text-gray-600">
-              Processing {progress.processed} of {progress.total} places
+      <h3 className="text-sm font-medium">Places Need Geocoding</h3>
+      {pendingTrees.map((tree) => (
+        <div key={tree.id} className="space-y-2 p-2 border rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: tree.color }}
+              />
+              <span className="text-sm">{tree.name}</span>
             </div>
-            {progress.currentPlace && (
-              <div className="text-gray-500 truncate">
-                {progress.currentPlace}
-              </div>
-            )}
+            <span className="text-sm text-gray-500">
+              {tree.geocodingStatus.placesToGeocode.size} places need
+              coordinates
+            </span>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onCancelAction}
-            className="w-full"
-          >
-            Cancel
-          </Button>
+          {isGeocoding && tree.id === progress.treeId ? (
+            <div className="space-y-1">
+              <Progress
+                value={(progress.processed / progress.total) * 100}
+                className="h-2"
+              />
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>
+                  {progress.processed} of {progress.total}
+                </span>
+                <span className="truncate ml-2">{progress.currentPlace}</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onCancelAction}
+                className="w-full"
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onStartAction(tree.id)}
+              disabled={isGeocoding}
+              className="w-full"
+            >
+              {isGeocoding ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Waiting...
+                </>
+              ) : (
+                "Start Geocoding"
+              )}
+            </Button>
+          )}
         </div>
-      )}
+      ))}
     </div>
   );
 }
