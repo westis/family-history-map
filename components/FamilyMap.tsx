@@ -3,7 +3,15 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { X, ChevronLeft, ChevronRight, Plus, Minus, Info } from "lucide-react";
+import {
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Minus,
+  Info,
+  Loader2,
+} from "lucide-react";
 import {
   MapContainer,
   TileLayer,
@@ -522,6 +530,7 @@ export default function FamilyMap() {
   const [contextMenuPosition, setContextMenuPosition] = useState<
     [number, number] | null
   >(null);
+  const [isLoadingParishes, setIsLoadingParishes] = useState(false);
 
   const filteredEvents = React.useMemo(() => {
     return people.flatMap((person) => {
@@ -709,6 +718,7 @@ export default function FamilyMap() {
 
   const loadParishData = async () => {
     try {
+      setIsLoadingParishes(true);
       const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
       const response = await fetch(`${basePath}/data/svenska-socknar.geojson`);
@@ -719,6 +729,8 @@ export default function FamilyMap() {
       setParishData(data);
     } catch (error) {
       console.error("Error loading parish data:", error);
+    } finally {
+      setIsLoadingParishes(false);
     }
   };
 
@@ -756,6 +768,13 @@ export default function FamilyMap() {
       </Button>
 
       <InfoPanel open={infoOpen} onOpenChange={setInfoOpen} />
+
+      {showParishes && isLoadingParishes && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-white rounded-lg shadow-lg px-4 py-2 flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span className="text-sm">Loading parish borders...</span>
+        </div>
+      )}
 
       <div
         className={cn(
@@ -941,7 +960,7 @@ export default function FamilyMap() {
             maxZoom={19}
             tileSize={256}
           />
-          {showParishes && parishData && (
+          {showParishes && parishData && !isLoadingParishes && (
             <GeoJSON
               data={parishData}
               style={{
