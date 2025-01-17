@@ -4,7 +4,13 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { X, ChevronLeft, ChevronRight, Plus, Minus, Info } from "lucide-react";
-import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  GeoJSON,
+  useMapEvents,
+  useMap,
+} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
@@ -44,6 +50,7 @@ import { PersonCard } from "@/components/person/PersonCard";
 import { GeocodingReport } from "@/components/dialogs/GeocodingReport";
 import { InfoPanel } from "@/components/dialogs/InfoPanel";
 import { LayerControl } from "@/components/ui/control-panel/LayerControl";
+import { SearchBox } from "@/components/ui/control-panel/SearchBox";
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
@@ -349,6 +356,111 @@ function AncestorFilterPanel({
   );
 }
 
+function CoordinateContextMenu({
+  position: [lat, lng],
+  onClose,
+}: {
+  position: [number, number];
+  onClose: () => void;
+}) {
+  const mapRef = useMap();
+  const point = mapRef.latLngToContainerPoint([lat, lng]);
+
+  const formattedLat = lat.toFixed(6);
+  const formattedLng = lng.toFixed(6);
+
+  const copyToClipboard = (format: "decimal" | "dms") => {
+    let textToCopy = "";
+
+    if (format === "decimal") {
+      textToCopy = `${formattedLat}, ${formattedLng}`;
+    } else {
+      // Convert to degrees, minutes, seconds format
+      const latDMS = convertToDMS(lat, "N", "S");
+      const lngDMS = convertToDMS(lng, "E", "W");
+      textToCopy = `${latDMS} ${lngDMS}`;
+    }
+
+    navigator.clipboard.writeText(textToCopy);
+    onClose();
+  };
+
+  return (
+    <Card
+      className="absolute z-[1000] bg-white shadow-lg p-2 min-w-[200px]"
+      style={{
+        left: `${point.x}px`,
+        top: `${point.y}px`,
+      }}
+    >
+      <div className="space-y-2">
+        <div className="text-sm font-medium px-2 py-1">
+          {formattedLat}, {formattedLng}
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start"
+          onClick={() => copyToClipboard("decimal")}
+        >
+          Copy Decimal Format
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start"
+          onClick={() => copyToClipboard("dms")}
+        >
+          Copy DMS Format
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function convertToDMS(
+  decimal: number,
+  posChar: string,
+  negChar: string
+): string {
+  const direction = decimal >= 0 ? posChar : negChar;
+  const absolute = Math.abs(decimal);
+  const degrees = Math.floor(absolute);
+  const minutesDecimal = (absolute - degrees) * 60;
+  const minutes = Math.floor(minutesDecimal);
+  const seconds = Math.round((minutesDecimal - minutes) * 60 * 100) / 100;
+
+  return `${degrees}°${minutes}'${seconds}"${direction}`;
+}
+
+function MapEventHandler({
+  onContextMenu,
+}: {
+  onContextMenu: (latlng: [number, number]) => void;
+}) {
+  const map = useMapEvents({
+    contextmenu: (e) => {
+      e.originalEvent.preventDefault(); // Prevent default context menu
+      onContextMenu([e.latlng.lat, e.latlng.lng]);
+    },
+    click: () => {
+      // Close context menu on regular click
+      onContextMenu([-1, -1]);
+    },
+  });
+
+  // Prevent default context menu on the map container
+  useEffect(() => {
+    if (map) {
+      map.getContainer().addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+      });
+    }
+  }, [map]);
+
+  return null;
+}
+
 export default function FamilyMap() {
   const [people, setPeople] = useState<Person[]>([]);
   const [yearRange, setYearRange] = useState<[number, number]>([1800, 2024]);
@@ -407,6 +519,9 @@ export default function FamilyMap() {
   const geocodingRef = useRef({ shouldContinue: true });
   const [showParishes, setShowParishes] = useState(false);
   const [parishData, setParishData] = useState<GeoJSONCollection | null>(null);
+  const [contextMenuPosition, setContextMenuPosition] = useState<
+    [number, number] | null
+  >(null);
 
   const filteredEvents = React.useMemo(() => {
     return people.flatMap((person) => {
@@ -652,6 +767,35 @@ export default function FamilyMap() {
       >
         <div className={cn("p-4", isControlsCollapsed ? "hidden" : "")}>
           <div className="space-y-6">
+            <SearchBox
+              people={people}
+              onSelectPerson={(person) => {
+                const event =
+                  person.events.find(
+                    (e) =>
+                      e.coordinates[0] !== 0 &&
+                      e.coordinates[1] !== 0 &&
+                      e.place !== "Unknown"
+                  ) || person.events[0];
+
+                setSelectedPerson({ person, event });
+
+                if (
+                  event &&
+                  event.coordinates[0] !== 0 &&
+                  event.coordinates[1] !== 0
+                ) {
+                  setZoomToLocation({
+                    coordinates: event.coordinates,
+                    zoom: 14,
+                  });
+                }
+              }}
+              onSelectLocation={(coordinates, zoom) => {
+                setZoomToLocation({ coordinates, zoom });
+              }}
+            />
+
             <FileUpload
               onUploadAction={setPeople}
               onYearRangeUpdateAction={(minYear, maxYear) =>
@@ -884,6 +1028,21 @@ export default function FamilyMap() {
             coordinates={zoomToLocation?.coordinates || null}
             zoom={zoomToLocation?.zoom}
           />
+          <MapEventHandler
+            onContextMenu={(latlng) => {
+              if (latlng[0] === -1) {
+                setContextMenuPosition(null);
+              } else {
+                setContextMenuPosition(latlng);
+              }
+            }}
+          />
+          {contextMenuPosition && (
+            <CoordinateContextMenu
+              position={contextMenuPosition}
+              onClose={() => setContextMenuPosition(null)}
+            />
+          )}
         </MapContainer>
       )}
 
