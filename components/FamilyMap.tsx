@@ -938,8 +938,9 @@ export default function FamilyMap() {
     }, 2000);
   };
 
+  // Update the useEffect for parish data loading
   useEffect(() => {
-    if (showParishes && !parishData) {
+    if (showParishes && !parishData && !isLoadingParishes) {
       console.log("Before loading parish data:");
       logMemoryUsage();
       loadParishData().then(() => {
@@ -947,27 +948,9 @@ export default function FamilyMap() {
         logMemoryUsage();
       });
     }
-  }, [showParishes, parishData]);
+  }, [showParishes, parishData, isLoadingParishes]);
 
-  useEffect(() => {
-    if (mapRef.current) {
-      const map = mapRef.current;
-      if (showParishes) {
-        if (!map.getPane("parishPane")) {
-          map.createPane("parishPane");
-          const parishPane = map.getPane("parishPane");
-          if (parishPane) {
-            parishPane.style.zIndex = "200";
-            parishPane.style.pointerEvents = "none";
-            parishPane.style.willChange = "transform";
-            parishPane.style.transform = "translate3d(0,0,0)";
-            parishPane.style.backfaceVisibility = "hidden";
-          }
-        }
-      }
-    }
-  }, [showParishes]);
-
+  // Update the useEffect for parish data cleanup
   useEffect(() => {
     if (!showParishes && parishData) {
       // Clear parish data when layer is disabled
@@ -975,7 +958,7 @@ export default function FamilyMap() {
       console.log("After clearing parish data:");
       logMemoryUsage();
     }
-  }, [showParishes]);
+  }, [showParishes, parishData]);
 
   // Add this memoized lookup map for quick coordinate access
   const coordinateMap = React.useMemo(() => {
@@ -1031,6 +1014,46 @@ export default function FamilyMap() {
       console.timeEnd("total-selection-process");
     },
     [coordinateMap]
+  );
+
+  const handleTreeRemove = useCallback(
+    (treeId: string) => {
+      console.log("FamilyMap handleTreeRemove starting...");
+      const tree = trees.find((t) => t.id === treeId);
+      console.log("Tree found:", {
+        id: tree?.id,
+        name: tree?.name,
+        isMain: tree?.isMain,
+        currentTreesCount: trees.length,
+      });
+
+      if (tree) {
+        if (tree.isMain) {
+          console.log("Clearing main tree state - starting state reset");
+          try {
+            setPeople([]);
+            console.log("People state cleared");
+            setRootPerson(null);
+            setSelectedPerson(null);
+            setLocationPeople([]);
+            setCurrentLocationIndex(0);
+            setYearRange([1500, 2024]);
+            setSelectedEventTypes(["BIRT", "DEAT", "RESI"]);
+            setRelationFilter("all");
+            setAncestorFilter({
+              selectedAncestors: new Set(),
+              showAncestorNumbers: false,
+            });
+            setRelationships(new Map());
+            setAhnentafelNumbers(new Map());
+            console.log("All state cleared successfully");
+          } catch (error) {
+            console.error("Error during state reset:", error);
+          }
+        }
+      }
+    },
+    [trees]
   );
 
   return (
@@ -1099,7 +1122,13 @@ export default function FamilyMap() {
                 const newTree: TreeData = {
                   id: crypto.randomUUID(),
                   name: isMain ? "Main Tree" : `Tree ${trees.length + 1}`,
-                  people,
+                  people: people.map((person) => ({
+                    ...person,
+                    events: person.events.map((event) => ({
+                      ...event,
+                      treeId: crypto.randomUUID(),
+                    })),
+                  })),
                   color: DEFAULT_COLORS[trees.length % DEFAULT_COLORS.length],
                   isMain,
                   geocodingStatus: {
@@ -1112,7 +1141,7 @@ export default function FamilyMap() {
 
                 // If this is the main tree, also update people state
                 if (isMain) {
-                  setPeople(people);
+                  setPeople(newTree.people);
                 }
               }}
               onYearRangeUpdateAction={(minYear, maxYear) =>
@@ -1124,6 +1153,16 @@ export default function FamilyMap() {
                   console.log("Geocoding cache cleared");
                 }
               }}
+            />
+
+            <TreeManager
+              onTreeSelect={(treeId) => {
+                const selectedTree = trees.find((t) => t.id === treeId);
+                if (selectedTree?.isMain) {
+                  setPeople(selectedTree.people);
+                }
+              }}
+              onTreeRemove={handleTreeRemove}
             />
 
             <GeocodingSection
@@ -1180,24 +1219,6 @@ export default function FamilyMap() {
             <LayerControl
               showParishes={showParishes}
               onChangeAction={setShowParishes}
-            />
-
-            <TreeManager
-              onTreeSelect={(treeId) => {
-                const selectedTree = trees.find((t) => t.id === treeId);
-                if (selectedTree?.isMain) {
-                  setPeople(selectedTree.people);
-                }
-              }}
-              onTreeRemove={(treeId) => {
-                setTrees((current) => current.filter((t) => t.id !== treeId));
-                // If removing main tree, clear people state
-                const removedTree = trees.find((t) => t.id === treeId);
-                if (removedTree?.isMain) {
-                  setPeople([]);
-                  setRootPerson(null);
-                }
-              }}
             />
           </div>
         </div>

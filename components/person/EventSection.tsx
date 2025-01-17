@@ -21,9 +21,19 @@ export default function EventSection({
       a.place === b.place &&
       a.coordinates[0] === b.coordinates[0] &&
       a.coordinates[1] === b.coordinates[1] &&
-      a.date.from === b.date.from &&
-      a.date.to === b.date.to
+      a.date.year === b.date.year &&
+      a.date.month === b.date.month &&
+      a.date.day === b.date.day
     );
+  };
+
+  // Update the date comparison function
+  const sortEvents = (a: Event, b: Event) => {
+    if (!a.date.year && !b.date.year) return 0;
+    if (!a.date.year) return 1;
+    if (!b.date.year) return -1;
+
+    return a.date.year - b.date.year;
   };
 
   return (
@@ -55,7 +65,7 @@ export default function EventSection({
         <div>
           <h4 className="font-medium mb-2">Places of Residence</h4>
           <div className="space-y-2">
-            {events.residenceEvents.map((event, index) => (
+            {events.residenceEvents.sort(sortEvents).map((event, index) => (
               <EventCard
                 key={`residence-${index}`}
                 event={event}

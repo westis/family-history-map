@@ -1,12 +1,13 @@
 export interface Event {
-  type: "BIRT" | "DEAT" | "RESI";
+  type: EventType;
   date: {
-    from?: string;
-    to?: string;
     year: number | null;
+    month: number | null;
+    day: number | null;
   };
   place: string;
   coordinates: [number, number];
+  treeId?: string;
 }
 
 export interface Person {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useState, useCallback } from "react";
 import { Person } from "@/app/utils/types";
 
 export interface TreeData {
@@ -42,74 +42,68 @@ const DEFAULT_COLORS = [
 export function TreeProvider({ children }: { children: React.ReactNode }) {
   const [trees, setTrees] = useState<TreeData[]>([]);
 
-  const addTree = (people: Person[], name: string, isMain: boolean = false) => {
-    const newTree: TreeData = {
-      id: crypto.randomUUID(),
-      name,
-      people,
-      color: DEFAULT_COLORS[trees.length % DEFAULT_COLORS.length],
-      isMain,
-      geocodingStatus: {
-        processed: 0,
-        total: 0,
-        placesToGeocode: new Set(),
-      },
-    };
+  // Add debug logging
+  console.log("TreeContext state:", { trees });
 
-    setTrees((current) => [...current, newTree]);
-  };
-
-  const removeTree = (id: string) => {
-    setTrees((current) => current.filter((tree) => tree.id !== id));
-  };
-
-  const updateTreeName = (id: string, name: string) => {
-    setTrees((current) =>
-      current.map((tree) => (tree.id === id ? { ...tree, name } : tree))
-    );
-  };
-
-  const updateTreeColor = (id: string, color: string) => {
-    setTrees((current) =>
-      current.map((tree) => (tree.id === id ? { ...tree, color } : tree))
-    );
-  };
-
-  const getMainTree = () => {
-    return trees.find((tree) => tree.isMain);
-  };
-
-  const updateGeocodingStatus = (
-    id: string,
-    status: Partial<TreeData["geocodingStatus"]>
-  ) => {
-    setTrees((current) =>
-      current.map((tree) =>
-        tree.id === id
-          ? {
-              ...tree,
-              geocodingStatus: { ...tree.geocodingStatus, ...status },
-            }
-          : tree
-      )
-    );
-  };
-
-  return (
-    <TreeContext.Provider
-      value={{
-        trees,
-        addTree,
-        removeTree,
-        updateTreeName,
-        updateTreeColor,
-        getMainTree,
-        updateGeocodingStatus,
-      }}
-    >
-      {children}
-    </TreeContext.Provider>
+  const addTree = useCallback(
+    (people: Person[], name: string, isMain = false) => {
+      const newTree: TreeData = {
+        id: crypto.randomUUID(),
+        name,
+        people,
+        color: DEFAULT_COLORS[trees.length % DEFAULT_COLORS.length],
+        isMain,
+        geocodingStatus: {
+          processed: 0,
+          total: 0,
+          placesToGeocode: new Set(),
+        },
+      };
+      setTrees((current) => [...current, newTree]);
+    },
+    [trees.length]
   );
+
+  const value = {
+    trees,
+    addTree,
+    removeTree: (id: string) => {
+      console.log("TreeContext: removeTree called with id:", id);
+      const treeToRemove = trees.find((t) => t.id === id);
+      console.log("TreeContext: found tree:", treeToRemove);
+
+      if (treeToRemove?.isMain) {
+        console.log("TreeContext: clearing all trees");
+        setTrees([]);
+      } else {
+        console.log("TreeContext: filtering out tree");
+        setTrees((current) => current.filter((t) => t.id !== id));
+      }
+      console.log("TreeContext: trees after removal:", trees);
+    },
+    updateTreeName: (id: string, name: string) =>
+      setTrees((current) =>
+        current.map((t) => (t.id === id ? { ...t, name } : t))
+      ),
+    updateTreeColor: (id: string, color: string) =>
+      setTrees((current) =>
+        current.map((t) => (t.id === id ? { ...t, color } : t))
+      ),
+    getMainTree: () => trees.find((t) => t.isMain),
+    updateGeocodingStatus: (
+      id: string,
+      status: Partial<TreeData["geocodingStatus"]>
+    ) =>
+      setTrees((current) =>
+        current.map((t) =>
+          t.id === id
+            ? { ...t, geocodingStatus: { ...t.geocodingStatus, ...status } }
+            : t
+        )
+      ),
+  };
+
+  return <TreeContext.Provider value={value}>{children}</TreeContext.Provider>;
 }
 
 export const useTrees = () => {

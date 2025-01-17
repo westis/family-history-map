@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { FileUp } from "lucide-react";
 import { Person } from "@/app/utils/types";
 import { parseGEDCOM } from "@/app/utils/gedcom";
+import { useTrees } from "@/contexts/TreeContext";
 
 interface FileUploadProps {
   isFirstTree: boolean;
@@ -24,6 +25,7 @@ export function FileUpload({
   onClearCacheAction,
 }: FileUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { addTree } = useTrees();
   const [needsGeocoding, setNeedsGeocoding] = useState(false);
 
   const handleFileUpload = async (
@@ -58,7 +60,9 @@ export function FileUpload({
       });
 
       setNeedsGeocoding(placesToGeocode.size > 0);
-      onUploadAction(people, placesToGeocode, isFirstTree);
+      const isMain = isFirstTree;
+      onUploadAction(people, placesToGeocode, isMain);
+      addTree(people, file.name.replace(".ged", ""), isMain);
 
       if (years.length) {
         const minYear = Math.min(...years);
@@ -71,7 +75,7 @@ export function FileUpload({
         event.target.value = "";
       }
     } catch (error) {
-      console.error("Error parsing GEDCOM:", error);
+      console.error("Error processing GEDCOM file:", error);
     }
   };
 

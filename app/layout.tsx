@@ -4,6 +4,9 @@ import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import { FamilyMapProvider } from "@/contexts/FamilyMapContext";
 import { TreeProvider } from "@/contexts/TreeContext";
+import { Inter } from "next/font/google";
+
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
   title: "Family History Map",
@@ -17,7 +20,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
+      <body className={inter.className}>
         <TreeProvider>
           <FamilyMapProvider>{children}</FamilyMapProvider>
         </TreeProvider>
