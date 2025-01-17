@@ -595,13 +595,19 @@ export default function FamilyMap() {
   const loadParishData = async () => {
     try {
       const basePath =
-        window.location.pathname.replace(/\/$/, "").replace(/\/[^/]*$/, "") ||
-        "";
+        process.env.NODE_ENV === "production"
+          ? window.location.pathname.split("/").slice(0, 2).join("/")
+          : "";
+
       const response = await fetch(`${basePath}/data/svenska-socknar.geojson`);
       if (!response.ok) {
+        console.error(
+          `Failed to load parish data: ${response.status} ${response.statusText}`
+        );
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       const data = await response.json();
+      console.log("Successfully loaded parish data");
       setParishData(data);
     } catch (error) {
       console.error("Error loading parish data:", error);
