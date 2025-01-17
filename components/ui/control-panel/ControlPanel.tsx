@@ -23,6 +23,7 @@ interface ControlPanelProps {
   setRelationFilter: (filter: RelationFilter) => void;
   isCalculating: boolean;
   placesToGeocode: Set<string>;
+  setPlacesToGeocode: (places: Set<string>) => void;
   isGeocoding: boolean;
   geocodingProgress: {
     processed: number;
@@ -48,6 +49,7 @@ export function ControlPanel({
   setRelationFilter,
   isCalculating,
   placesToGeocode,
+  setPlacesToGeocode,
   isGeocoding,
   geocodingProgress,
   onStartGeocoding,
@@ -81,6 +83,7 @@ export function ControlPanel({
                 console.log("Geocoding cache cleared");
               }
             }}
+            setPlacesToGeocodeAction={setPlacesToGeocode}
           />
 
           <GeocodingSection
