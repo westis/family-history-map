@@ -592,19 +592,25 @@ export default function FamilyMap() {
     }, 2000);
   };
 
-  useEffect(() => {
-    if (showParishes && !parishData) {
-      fetch("/data/svenska-socknar.geojson")
-        .then((response) => response.json())
-        .then((data) => {
-          console.log("Loaded parish data:", data);
-          setParishData(data);
-        })
-        .catch((error) => {
-          console.error("Error loading parish data:", error);
-        });
+  const loadParishData = async () => {
+    try {
+      const basePath =
+        window.location.pathname.replace(/\/$/, "").replace(/\/[^/]*$/, "") ||
+        "";
+      const response = await fetch(`${basePath}/data/svenska-socknar.geojson`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      setParishData(data);
+    } catch (error) {
+      console.error("Error loading parish data:", error);
     }
-  }, [showParishes, parishData]);
+  };
+
+  useEffect(() => {
+    loadParishData();
+  }, []);
 
   useEffect(() => {
     if (mapRef.current) {
