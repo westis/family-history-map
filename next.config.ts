@@ -9,6 +9,7 @@ if (isGithubActions) {
   const repo = process.env.GITHUB_REPOSITORY?.replace(/.*?\//, "");
   assetPrefix = `/${repo}/`;
   basePath = `/${repo}`;
+  process.env.NEXT_PUBLIC_BASE_PATH = basePath;
 }
 
 const nextConfig: NextConfig = {
@@ -18,13 +19,8 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  webpack: (config) => {
-    config.module.rules.push({
-      test: /\.geojson$/,
-      use: ["json-loader"],
-      type: "javascript/auto",
-    });
-    return config;
+  env: {
+    NEXT_PUBLIC_BASE_PATH: basePath,
   },
 };
 
