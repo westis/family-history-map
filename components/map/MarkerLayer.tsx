@@ -225,6 +225,7 @@ export function MarkerLayer({
           ancestorFilter.showAncestorNumbers && numbers.length > 0
             ? `<div class="marker-number">${Math.min(...numbers)}</div>`
             : "",
+        pane: "markerPane",
       };
     };
 
@@ -309,10 +310,17 @@ export function MarkerLayer({
           relationshipType,
           ahnentafelNumbers.get(person.id) || []
         )
-      ).on("click", (e) => {
-        L.DomEvent.stopPropagation(e);
-        onSelectAction(person, event);
-      });
+      )
+        .bindTooltip(event.place, {
+          permanent: false,
+          direction: "top",
+          className: "marker-tooltip",
+          opacity: 0.9,
+        })
+        .on("click", (e) => {
+          L.DomEvent.stopPropagation(e);
+          onSelectAction(person, event);
+        });
 
       const coordKey = `${event.coordinates[0]},${event.coordinates[1]}`;
       markersRef.current.set(coordKey, marker);

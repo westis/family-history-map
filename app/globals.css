@@ -232,3 +232,22 @@
     stroke: #8b5cf6;
   }
 }
+
+.parish-tooltip {
+  background: white;
+  border: none;
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  padding: 4px 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Add these new rules to remove focus outlines */
+.leaflet-container {
+  outline: none !important;
+}
+
+.leaflet-interactive {
+  outline: none !important;
+}

@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { X, ChevronLeft, ChevronRight, Plus, Minus, Info } from "lucide-react";
-import { MapContainer, TileLayer } from "react-leaflet";
+import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
@@ -25,6 +25,7 @@ import {
   LocationPerson,
   EventType,
   RelationFilter,
+  GeoJSONCollection,
 } from "@/app/utils/types";
 import { calculateRelationships } from "@/app/utils/relationships";
 import {
@@ -42,6 +43,7 @@ import { RootPersonDialog } from "@/components/ui/control-panel/RootPersonDialog
 import { PersonCard } from "@/components/person/PersonCard";
 import { GeocodingReport } from "@/components/dialogs/GeocodingReport";
 import { InfoPanel } from "@/components/dialogs/InfoPanel";
+import { LayerControl } from "@/components/ui/control-panel/LayerControl";
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
@@ -403,6 +405,8 @@ export default function FamilyMap() {
     new Set()
   );
   const geocodingRef = useRef({ shouldContinue: true });
+  const [showParishes, setShowParishes] = useState(false);
+  const [parishData, setParishData] = useState<GeoJSONCollection | null>(null);
 
   const filteredEvents = React.useMemo(() => {
     return people.flatMap((person) => {
@@ -588,6 +592,35 @@ export default function FamilyMap() {
     }, 2000);
   };
 
+  useEffect(() => {
+    if (showParishes && !parishData) {
+      fetch("/data/svenska-socknar.geojson")
+        .then((response) => response.json())
+        .then((data) => {
+          console.log("Loaded parish data:", data);
+          setParishData(data);
+        })
+        .catch((error) => {
+          console.error("Error loading parish data:", error);
+        });
+    }
+  }, [showParishes, parishData]);
+
+  useEffect(() => {
+    if (mapRef.current) {
+      const map = mapRef.current;
+      if (showParishes) {
+        if (!map.getPane("parishPane")) {
+          map.createPane("parishPane");
+          const parishPane = map.getPane("parishPane");
+          if (parishPane) {
+            parishPane.style.zIndex = "200"; // Lower than marker pane (400)
+          }
+        }
+      }
+    }
+  }, [showParishes]);
+
   return (
     <div className="h-screen w-screen overflow-hidden relative">
       <Button
@@ -677,6 +710,11 @@ export default function FamilyMap() {
                 </Button>
               </div>
             )}
+
+            <LayerControl
+              showParishes={showParishes}
+              onChangeAction={setShowParishes}
+            />
           </div>
         </div>
 
@@ -752,6 +790,51 @@ export default function FamilyMap() {
             maxZoom={19}
             tileSize={256}
           />
+          {showParishes && parishData && (
+            <GeoJSON
+              data={parishData}
+              style={{
+                color: "#374151",
+                weight: 1,
+                opacity: 0.5,
+                fillOpacity: 0.1,
+                pane: "parishPane",
+                className: "parish-layer",
+              }}
+              onEachFeature={(feature, layer) => {
+                const name = feature.properties?.NAMN;
+                if (name) {
+                  layer.bindTooltip(name, {
+                    permanent: false,
+                    direction: "auto",
+                    className: "parish-tooltip",
+                    sticky: true,
+                  });
+                }
+
+                layer.on({
+                  mouseover: (e) => {
+                    const layer = e.target;
+                    layer.setStyle({
+                      weight: 3,
+                      color: "#1d4ed8",
+                      opacity: 1,
+                      fillOpacity: 0.2,
+                    });
+                  },
+                  mouseout: (e) => {
+                    const layer = e.target;
+                    layer.setStyle({
+                      weight: 1,
+                      color: "#374151",
+                      opacity: 0.5,
+                      fillOpacity: 0.1,
+                    });
+                  },
+                });
+              }}
+            />
+          )}
           <MarkerLayer
             events={filteredEvents}
             onSelectAction={(person, event) => {

@@ -51,3 +51,20 @@ export interface LocationPerson {
 
 export type EventType = "BIRT" | "DEAT" | "RESI";
 export type RelationFilter = "all" | "ancestors" | "descendants";
+
+export interface GeoJSONFeature {
+  type: "Feature";
+  properties: {
+    name: string;
+    [key: string]: string | number | boolean | null;
+  };
+  geometry: {
+    type: "Polygon" | "MultiPolygon";
+    coordinates: number[][][] | number[][][][];
+  };
+}
+
+export interface GeoJSONCollection {
+  type: "FeatureCollection";
+  features: GeoJSONFeature[];
+}
