@@ -623,6 +623,7 @@ export default function FamilyMap() {
                   console.log("Geocoding cache cleared");
                 }
               }}
+              setPlacesToGeocodeAction={setPlacesToGeocode}
             />
 
             <GeocodingSection

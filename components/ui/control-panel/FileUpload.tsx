@@ -10,12 +10,14 @@ interface FileUploadProps {
   onUploadAction: (people: Person[]) => void;
   onYearRangeUpdateAction: (minYear: number, maxYear: number) => void;
   onClearCacheAction: () => void;
+  setPlacesToGeocodeAction: (places: Set<string>) => void;
 }
 
 export function FileUpload({
   onUploadAction,
   onYearRangeUpdateAction,
   onClearCacheAction,
+  setPlacesToGeocodeAction,
 }: FileUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -37,8 +39,23 @@ export function FileUpload({
         const content = e.target?.result as string;
         const parsedPeople = await parseGEDCOM(content);
 
-        // Update parent component with parsed data
+        // After parsing, collect places that need geocoding
+        const placesNeedingCoordinates = new Set<string>();
+        parsedPeople.forEach((person) => {
+          person.events.forEach((event) => {
+            if (
+              event.place !== "Unknown" &&
+              event.coordinates[0] === 0 &&
+              event.coordinates[1] === 0
+            ) {
+              placesNeedingCoordinates.add(event.place);
+            }
+          });
+        });
+
+        // Update parent components
         onUploadAction(parsedPeople);
+        setPlacesToGeocodeAction(placesNeedingCoordinates);
 
         // Calculate year range from the data
         const years = parsedPeople.flatMap((p) =>
