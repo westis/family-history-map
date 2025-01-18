@@ -1,7 +1,7 @@
 import { MapContainer, TileLayer } from "react-leaflet";
 import { Button } from "@/components/ui/button";
 import { Plus, Minus } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useMemo } from "react";
 import L from "leaflet";
 import { MarkerLayer } from "./MarkerLayer";
 import { MapController } from "./MapController";
@@ -10,7 +10,11 @@ import {
   Event,
   RelationshipInfo,
   AncestorFilter,
+  FilteredEvent,
+  PersonWithTree,
+  EventWithTree,
 } from "@/app/utils/types";
+import { useTrees } from "@/contexts/TreeContext";
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
@@ -48,6 +52,29 @@ export function MapView({
   zoomToLocation,
 }: MapViewProps) {
   const mapRef = useRef<L.Map | null>(null);
+  const { trees } = useTrees();
+
+  const filteredEvents = useMemo<FilteredEvent[]>(() => {
+    return events.map(({ person, event }) => {
+      const tree = trees.find((t) => t.id === person.treeId);
+
+      const personWithTree: PersonWithTree = {
+        ...person,
+        treeId: person.treeId,
+      };
+
+      const eventWithTree: EventWithTree = {
+        ...event,
+        treeId: person.treeId,
+        treeColor: tree?.color || "#666666",
+      };
+
+      return {
+        person: personWithTree,
+        event: eventWithTree,
+      };
+    });
+  }, [events, trees]);
 
   return (
     <>
@@ -96,7 +123,7 @@ export function MapView({
           tileSize={256}
         />
         <MarkerLayer
-          events={events}
+          events={filteredEvents}
           onSelectAction={onSelectPerson}
           activeCoordinates={activeCoordinates}
           rootPerson={rootPerson}
