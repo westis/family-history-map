@@ -9,6 +9,7 @@ import { Person } from "@/app/utils/types";
 
 interface FileUploadProps {
   isFirstTree?: boolean;
+  treeColor: string;
   onFileUploadAction: (people: Person[]) => void;
   onYearRangeUpdateAction: (minYear: number, maxYear: number) => void;
   onClearCacheAction: () => void;
@@ -16,6 +17,7 @@ interface FileUploadProps {
 
 export function FileUpload({
   isFirstTree = false,
+  treeColor,
   onFileUploadAction,
   onYearRangeUpdateAction,
   onClearCacheAction,
@@ -34,6 +36,14 @@ export function FileUpload({
       const text = await file.text();
       const treeId = "main";
       const people = await parseGEDCOM(text, treeId);
+
+      // Add tree color to all events
+      people.forEach((person) => {
+        person.events = person.events.map((event) => ({
+          ...event,
+          treeColor,
+        }));
+      });
 
       // Collect all unique places that need geocoding
       const placesToGeocode = new Set<string>();

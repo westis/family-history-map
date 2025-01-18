@@ -9,7 +9,6 @@ import { YearRangeFilter } from "./YearRangeFilter";
 import { RelationshipFilter } from "./RelationshipFilter";
 import { useState } from "react";
 import { Person, EventType, RelationFilter } from "@/app/utils/types";
-import { useTrees } from "@/contexts/TreeContext";
 
 interface ControlPanelProps {
   people: Person[];
@@ -58,7 +57,6 @@ export function ControlPanel({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const { trees } = useTrees();
 
   return (
     <div
@@ -72,7 +70,8 @@ export function ControlPanel({
       <div className={cn("p-4", isCollapsed ? "hidden" : "")}>
         <div className="space-y-6">
           <FileUpload
-            isFirstTree={!trees.some((t) => t.isMain)}
+            isFirstTree={true}
+            treeColor="#4A90E2"
             onFileUploadAction={setPeople}
             onYearRangeUpdateAction={(minYear, maxYear) =>
               setYearRange([minYear, maxYear])
