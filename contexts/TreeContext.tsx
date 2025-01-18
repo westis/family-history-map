@@ -72,14 +72,12 @@ export function TreeProvider({ children }: { children: React.ReactNode }) {
       const treeToRemove = trees.find((t) => t.id === id);
       console.log("TreeContext: found tree:", treeToRemove);
 
-      if (treeToRemove?.isMain) {
-        console.log("TreeContext: clearing all trees");
-        setTrees([]);
-      } else {
-        console.log("TreeContext: filtering out tree");
-        setTrees((current) => current.filter((t) => t.id !== id));
-      }
-      console.log("TreeContext: trees after removal:", trees);
+      setTrees((current) => {
+        // Create new array without the removed tree
+        const updatedTrees = current.filter((t) => t.id !== id);
+        console.log("TreeContext: updated trees:", updatedTrees);
+        return updatedTrees;
+      });
     },
     updateTreeName: (id: string, name: string) =>
       setTrees((current) =>

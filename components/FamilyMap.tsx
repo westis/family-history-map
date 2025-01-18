@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+} from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,6 +46,7 @@ import {
   EventType,
   RelationFilter,
   GeoJSONCollection,
+  GeoJSONFeature,
   PersonWithTree,
   FilteredEvent,
 } from "@/app/utils/types";
@@ -63,14 +70,16 @@ import { LayerControl } from "@/components/ui/control-panel/LayerControl";
 import { SearchBox } from "@/components/ui/control-panel/SearchBox";
 import { TreeManager } from "@/components/ui/control-panel/TreeManager";
 import { TreeOverlaps } from "@/components/ui/TreeOverlaps";
+import { useTrees } from "@/contexts/TreeContext";
 
-const DEFAULT_COLORS = [
-  "#2563eb", // Main tree - blue
-  "#dc2626", // Red
-  "#16a34a", // Green
-  "#9333ea", // Purple
-  "#ea580c", // Orange
-];
+// Remove or comment out the DEFAULT_COLORS constant since it's no longer used
+// const DEFAULT_COLORS = [
+//   "#2563eb", // Main tree - blue
+//   "#dc2626", // Red
+//   "#16a34a", // Green
+//   "#9333ea", // Purple
+//   "#ea580c", // Orange
+// ];
 
 const tileLayerUrl = `https://api.maptiler.com/maps/topo/256/{z}/{x}/{y}.png?key=PWo9ydkPHrwquRTjQYKg`;
 
@@ -123,14 +132,6 @@ const logMemoryUsage = () => {
     });
   }
 };
-
-// Add interface for parish feature
-interface ParishFeature {
-  properties: {
-    NAMN?: string;
-    [key: string]: unknown;
-  };
-}
 
 function AncestorFilterPanel({
   open,
@@ -683,9 +684,11 @@ export default function FamilyMap() {
     [number, number] | null
   >(null);
   const [isLoadingParishes, setIsLoadingParishes] = useState(false);
-  const [trees, setTrees] = useState<TreeData[]>([]);
+  const { trees, removeTree, updateGeocodingStatus } = useTrees();
+  const [filteredEvents, setFilteredEvents] = useState<FilteredEvent[]>([]);
 
-  const loadParishData = async () => {
+  // Move loadParishData inside the component
+  const loadParishData = useCallback(async () => {
     try {
       setIsLoadingParishes(true);
       const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
@@ -697,7 +700,7 @@ export default function FamilyMap() {
       const data = await response.json();
 
       // Simplify geometries to reduce memory usage
-      data.features = data.features.map((feature: ParishFeature) => ({
+      data.features = data.features.map((feature: GeoJSONFeature) => ({
         ...feature,
         properties: {
           NAMN: feature.properties.NAMN,
@@ -710,9 +713,10 @@ export default function FamilyMap() {
     } finally {
       setIsLoadingParishes(false);
     }
-  };
+  }, []); // No dependencies needed since we're using state setters
 
-  const filteredEvents = React.useMemo(() => {
+  // Update the memoized events calculation
+  const calculatedEvents = useMemo(() => {
     const mainTree = trees.find((tree) => tree.isMain);
     if (!mainTree) return [];
 
@@ -789,6 +793,11 @@ export default function FamilyMap() {
     ahnentafelNumbers,
   ]);
 
+  // Update filteredEvents when calculatedEvents changes
+  useEffect(() => {
+    setFilteredEvents(calculatedEvents);
+  }, [calculatedEvents]);
+
   useEffect(() => {
     async function calculateRelationshipsAsync() {
       if (rootPerson && people.length > 0) {
@@ -819,7 +828,7 @@ export default function FamilyMap() {
   }, [rootPerson, people]);
 
   const handleGeocoding = async (treeId: string) => {
-    const tree = trees.find((t) => t.id === treeId);
+    const tree = trees.find((t: TreeData) => t.id === treeId);
     if (!tree || tree.geocodingStatus.placesToGeocode.size === 0) return;
 
     setIsGeocoding(true);
@@ -860,36 +869,18 @@ export default function FamilyMap() {
           geocodedPlaces.set(place, coordinates);
           successCount++;
 
-          setTrees((currentTrees) =>
-            currentTrees.map((t) => {
-              if (t.id !== tree.id) return t;
+          // Update geocoding status in TreeContext
+          updateGeocodingStatus(tree.id, {
+            placesToGeocode: new Set(
+              Array.from(tree.geocodingStatus.placesToGeocode).filter(
+                (p) => p !== place
+              )
+            ),
+          });
 
-              return {
-                ...t,
-                people: t.people.map((person) => ({
-                  ...person,
-                  events: person.events.map((event) => {
-                    if (event.place === place) {
-                      return { ...event, coordinates };
-                    }
-                    return event;
-                  }),
-                })),
-                geocodingStatus: {
-                  ...t.geocodingStatus,
-                  placesToGeocode: new Set(
-                    Array.from(t.geocodingStatus.placesToGeocode).filter(
-                      (p) => p !== place
-                    )
-                  ),
-                },
-              };
-            })
-          );
-
-          // Also update main people state if this is the main tree
+          // Update people state if this is the main tree
           if (tree.isMain) {
-            setPeople((currentPeople) =>
+            setPeople((currentPeople: Person[]) =>
               currentPeople.map((person) => ({
                 ...person,
                 events: person.events.map((event) => {
@@ -941,14 +932,9 @@ export default function FamilyMap() {
   // Update the useEffect for parish data loading
   useEffect(() => {
     if (showParishes && !parishData && !isLoadingParishes) {
-      console.log("Before loading parish data:");
-      logMemoryUsage();
-      loadParishData().then(() => {
-        console.log("After loading parish data:");
-        logMemoryUsage();
-      });
+      loadParishData();
     }
-  }, [showParishes, parishData, isLoadingParishes]);
+  }, [showParishes, parishData, isLoadingParishes, loadParishData]);
 
   // Update the useEffect for parish data cleanup
   useEffect(() => {
@@ -1018,43 +1004,74 @@ export default function FamilyMap() {
 
   const handleTreeRemove = useCallback(
     (treeId: string) => {
-      console.log("FamilyMap handleTreeRemove starting...");
-      const tree = trees.find((t) => t.id === treeId);
-      console.log("Tree found:", {
-        id: tree?.id,
-        name: tree?.name,
-        isMain: tree?.isMain,
-        currentTreesCount: trees.length,
-      });
+      console.log("FamilyMap: handleTreeRemove called for tree:", treeId);
+      const removedTree = trees.find((t: TreeData) => t.id === treeId);
 
-      if (tree) {
-        if (tree.isMain) {
-          console.log("Clearing main tree state - starting state reset");
-          try {
-            setPeople([]);
-            console.log("People state cleared");
-            setRootPerson(null);
-            setSelectedPerson(null);
-            setLocationPeople([]);
-            setCurrentLocationIndex(0);
-            setYearRange([1500, 2024]);
-            setSelectedEventTypes(["BIRT", "DEAT", "RESI"]);
-            setRelationFilter("all");
-            setAncestorFilter({
-              selectedAncestors: new Set(),
-              showAncestorNumbers: false,
-            });
-            setRelationships(new Map());
-            setAhnentafelNumbers(new Map());
-            console.log("All state cleared successfully");
-          } catch (error) {
-            console.error("Error during state reset:", error);
-          }
+      if (removedTree?.isMain) {
+        // Main tree removal - clear everything
+        console.log("Clearing main tree state...");
+        setPeople([]);
+        setRootPerson(null);
+        setSelectedPerson(null);
+        setLocationPeople([]);
+        setCurrentLocationIndex(0);
+        setYearRange([1500, 2024]);
+        setSelectedEventTypes(["BIRT", "DEAT", "RESI"]);
+        setRelationFilter("all");
+        setAncestorFilter({
+          selectedAncestors: new Set(),
+          showAncestorNumbers: false,
+        });
+        setRelationships(new Map());
+        setAhnentafelNumbers(new Map());
+        localStorage.clear();
+        window.location.reload();
+      } else {
+        // Comparison tree removal - just update necessary state
+        console.log("Removing comparison tree...");
+
+        // Remove the tree from context
+        removeTree(treeId);
+
+        // Clear selection if it was from this tree
+        if (selectedPerson?.person.treeId === treeId) {
+          setSelectedPerson(null);
         }
+
+        // Clear location people from this tree
+        setLocationPeople((current: LocationPerson[]) =>
+          current.filter((p) => p.person.treeId !== treeId)
+        );
+
+        // Reset location index if needed
+        setCurrentLocationIndex(0);
       }
     },
-    [trees]
+    [trees, selectedPerson?.person.treeId, removeTree]
   );
+
+  // Update the tree changes effect
+  useEffect(() => {
+    const treeIds = new Set(trees.map((t) => t.id));
+    const updatedEvents = filteredEvents.filter((event) =>
+      treeIds.has(event.person.treeId)
+    );
+
+    if (updatedEvents.length !== filteredEvents.length) {
+      setFilteredEvents(updatedEvents);
+    }
+
+    if (selectedPerson && !treeIds.has(selectedPerson.person.treeId)) {
+      setSelectedPerson(null);
+    }
+  }, [trees, filteredEvents, selectedPerson]);
+
+  // Update the useEffect that uses loadParishData
+  useEffect(() => {
+    if (showParishes && !parishData && !isLoadingParishes) {
+      loadParishData();
+    }
+  }, [showParishes, parishData, isLoadingParishes, loadParishData]);
 
   return (
     <div className="h-screen w-screen overflow-hidden relative">
@@ -1118,35 +1135,9 @@ export default function FamilyMap() {
 
             <FileUpload
               isFirstTree={trees.length === 0}
-              onUploadAction={(people, placesToGeocode, isMain) => {
-                const newTree: TreeData = {
-                  id: crypto.randomUUID(),
-                  name: isMain ? "Main Tree" : `Tree ${trees.length + 1}`,
-                  people: people.map((person) => ({
-                    ...person,
-                    events: person.events.map((event) => ({
-                      ...event,
-                      treeId: crypto.randomUUID(),
-                    })),
-                  })),
-                  color: DEFAULT_COLORS[trees.length % DEFAULT_COLORS.length],
-                  isMain,
-                  geocodingStatus: {
-                    processed: 0,
-                    total: 0,
-                    placesToGeocode,
-                  },
-                };
-                setTrees((current) => [...current, newTree]);
-
-                // If this is the main tree, also update people state
-                if (isMain) {
-                  setPeople(newTree.people);
-                }
+              onYearRangeUpdateAction={(minYear: number, maxYear: number) => {
+                setYearRange([minYear, maxYear]);
               }}
-              onYearRangeUpdateAction={(minYear, maxYear) =>
-                setYearRange([minYear, maxYear])
-              }
               onClearCacheAction={() => {
                 if (typeof window !== "undefined") {
                   localStorage.removeItem("geocoding-cache");

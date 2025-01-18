@@ -60,12 +60,17 @@ export function MarkerLayer({
   const markersRef = useRef<L.MarkerClusterGroup | null>(null);
   const { trees } = useTrees();
 
+  // Add console logs to track events changes
   useEffect(() => {
+    console.log("MarkerLayer: events changed", events.length);
+
     if (!map) return;
 
     // Remove existing markers
     if (markersRef.current) {
+      console.log("Removing existing markers");
       map.removeLayer(markersRef.current);
+      markersRef.current = null;
     }
 
     // Create marker cluster group
@@ -95,6 +100,8 @@ export function MarkerLayer({
         });
       },
     });
+
+    console.log("Creating new markers:", events.length);
 
     // Add markers for each event
     events.forEach(({ person, event }) => {

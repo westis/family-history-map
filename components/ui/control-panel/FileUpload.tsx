@@ -3,24 +3,17 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FileUp } from "lucide-react";
-import { Person } from "@/app/utils/types";
 import { parseGEDCOM } from "@/app/utils/gedcom";
 import { useTrees } from "@/contexts/TreeContext";
 
 interface FileUploadProps {
   isFirstTree: boolean;
-  onUploadAction: (
-    people: Person[],
-    placesToGeocode: Set<string>,
-    isMain: boolean
-  ) => void;
   onYearRangeUpdateAction: (minYear: number, maxYear: number) => void;
   onClearCacheAction: () => void;
 }
 
 export function FileUpload({
   isFirstTree,
-  onUploadAction,
   onYearRangeUpdateAction,
   onClearCacheAction,
 }: FileUploadProps) {
@@ -49,7 +42,6 @@ export function FileUpload({
             if (event.coordinates[0] === 0 && event.coordinates[1] === 0) {
               placesToGeocode.add(event.place);
             } else {
-              // If we have at least one event with valid coordinates, we'll show markers
               hasValidCoordinates = true;
             }
           }
@@ -61,7 +53,7 @@ export function FileUpload({
 
       setNeedsGeocoding(placesToGeocode.size > 0);
       const isMain = isFirstTree;
-      onUploadAction(people, placesToGeocode, isMain);
+
       addTree(people, file.name.replace(".ged", ""), isMain);
 
       if (years.length) {
@@ -70,7 +62,6 @@ export function FileUpload({
         onYearRangeUpdateAction(minYear, maxYear);
       }
 
-      // If we have valid coordinates, clear the file input to allow re-uploading the same file
       if (hasValidCoordinates) {
         event.target.value = "";
       }

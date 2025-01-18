@@ -10,7 +10,7 @@ interface TreeManagerProps {
 }
 
 export function TreeManager({ onTreeSelect, onTreeRemove }: TreeManagerProps) {
-  const { trees, updateTreeName } = useTrees();
+  const { trees, updateTreeName, removeTree } = useTrees();
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [treeToRemove, setTreeToRemove] = useState<string | null>(null);
 
@@ -24,20 +24,32 @@ export function TreeManager({ onTreeSelect, onTreeRemove }: TreeManagerProps) {
   const handleRemove = async (treeId: string) => {
     console.log("TreeManager: handleRemove called for tree:", treeId);
     try {
+      const isMainTree = trees.find((t) => t.id === treeId)?.isMain;
+
+      // Call the onTreeRemove callback first
+      onTreeRemove(treeId);
+
+      // Then remove from context/state
+      removeTree(treeId);
+
+      // Make API call
       await fetch("/api/gedcom/remove", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ treeId }),
       });
 
-      localStorage.clear();
-      onTreeRemove(treeId);
-      window.location.reload();
+      if (isMainTree) {
+        // For main tree: clear everything and reload
+        localStorage.clear();
+        window.location.reload();
+      }
+
+      setShowConfirmDialog(false);
+      setTreeToRemove(null);
     } catch (error) {
       console.error("TreeManager: Error during removal:", error);
     }
-    setShowConfirmDialog(false);
-    setTreeToRemove(null);
   };
 
   return (

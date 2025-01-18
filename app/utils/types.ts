@@ -7,7 +7,7 @@ export interface Event {
   };
   place: string;
   coordinates: [number, number];
-  treeId?: string;
+  treeId: string;
 }
 
 export interface Person {
@@ -19,6 +19,7 @@ export interface Person {
   children: string[];
   spouses: string[];
   relationship?: string;
+  treeId: string;
 }
 
 export interface AncestorInfo {
