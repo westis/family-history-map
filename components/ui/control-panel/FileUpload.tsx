@@ -32,7 +32,8 @@ export function FileUpload({
 
     try {
       const text = await file.text();
-      const people = await parseGEDCOM(text);
+      const treeId = "main";
+      const people = await parseGEDCOM(text, treeId);
 
       // Collect all unique places that need geocoding
       const placesToGeocode = new Set<string>();

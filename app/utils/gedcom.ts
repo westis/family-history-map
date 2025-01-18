@@ -1,6 +1,9 @@
 import { Person } from "./types";
 
-export const parseGEDCOM = async (text: string): Promise<Person[]> => {
+export const parseGEDCOM = async (
+  text: string,
+  treeId: string
+): Promise<Person[]> => {
   console.log("Starting GEDCOM parsing...");
   const lines = text.split("\n");
   console.log(`Total lines to process: ${lines.length}`);
@@ -41,6 +44,7 @@ export const parseGEDCOM = async (text: string): Promise<Person[]> => {
             parents: [],
             children: [],
             spouses: [],
+            treeId,
           };
           currentFamily = null;
         } else if (parts[2] === "FAM") {
@@ -61,11 +65,14 @@ export const parseGEDCOM = async (text: string): Promise<Person[]> => {
           type: tag as Person["events"][0]["type"],
           date: {
             year: null,
+            month: null,
+            day: null,
           },
           place: "Unknown",
           coordinates: [0, 0],
+          treeId,
         };
-        currentPerson.events.push(currentEvent);
+        currentPerson.events.push(currentEvent as Person["events"][0]);
       } else if (tag === "CHAN") {
         currentEvent = null;
       } else if (tag === "DATE" && currentEvent) {
@@ -73,20 +80,51 @@ export const parseGEDCOM = async (text: string): Promise<Person[]> => {
           const fromToMatch = value.match(/FROM (\d{4}) TO (\d{4})/i);
           if (fromToMatch) {
             currentEvent.date = {
-              from: fromToMatch[1],
-              to: fromToMatch[2],
               year: parseInt(fromToMatch[1]),
+              month: null,
+              day: null,
             };
           } else {
             const fullDateMatch = value.match(
-              /(\d{1,2}\s+[A-Za-z]+\s+)?(\d{4})/
+              /(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/
             );
             if (fullDateMatch) {
-              const year = parseInt(fullDateMatch[2]);
-              currentEvent.date = {
-                from: value.trim(),
-                year: year,
+              const day = parseInt(fullDateMatch[1]);
+              const monthStr = fullDateMatch[2];
+              const year = parseInt(fullDateMatch[3]);
+
+              // Convert month string to number (1-12)
+              const months: { [key: string]: number } = {
+                JAN: 1,
+                FEB: 2,
+                MAR: 3,
+                APR: 4,
+                MAY: 5,
+                JUN: 6,
+                JUL: 7,
+                AUG: 8,
+                SEP: 9,
+                OCT: 10,
+                NOV: 11,
+                DEC: 12,
               };
+              const month = months[monthStr.toUpperCase()];
+
+              currentEvent.date = {
+                year: year,
+                month: month || null,
+                day: day || null,
+              };
+            } else {
+              // Just year
+              const yearMatch = value.match(/(\d{4})/);
+              if (yearMatch) {
+                currentEvent.date = {
+                  year: parseInt(yearMatch[1]),
+                  month: null,
+                  day: null,
+                };
+              }
             }
           }
         }
