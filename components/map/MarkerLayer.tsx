@@ -80,6 +80,16 @@ export function MarkerLayer({
       disableClusteringAtZoom: 10,
       iconCreateFunction: (cluster: L.MarkerCluster) => {
         const markers = cluster.getAllChildMarkers();
+
+        // Create a Set of unique location strings to count unique places
+        const uniqueLocations = new Set(
+          markers.map((m: L.Marker) => {
+            const latlng = m.getLatLng();
+            return `${latlng.lat},${latlng.lng}`;
+          })
+        );
+
+        // Get tree colors for styling
         const treeColors = new Set(
           markers.map(
             (m: L.Marker) => (m.options as ExtendedMarkerOptions).treeColor
@@ -94,7 +104,7 @@ export function MarkerLayer({
         }
 
         return L.divIcon({
-          html: `<div class="cluster-marker" style="background-color: ${backgroundColor}">${cluster.getChildCount()}</div>`,
+          html: `<div class="cluster-marker" style="background-color: ${backgroundColor}">${uniqueLocations.size}</div>`,
           className: "custom-cluster-icon",
           iconSize: L.point(40, 40),
         });
@@ -106,14 +116,8 @@ export function MarkerLayer({
     // Add markers for each event
     events.forEach(({ person, event }) => {
       const relationshipInfo = relationships.get(person.id);
-      const isHighlighted =
-        temporaryHighlight?.personId === person.id ||
-        (temporaryHighlight?.type === "ancestors" &&
-          relationshipInfo?.type === "ancestor") ||
-        (temporaryHighlight?.type === "descendants" &&
-          relationshipInfo?.type === "descendant");
 
-      // Determine marker color based on whether we have comparison trees
+      // Just keep the marker color logic
       const markerColor =
         trees.length > 1
           ? event.treeColor // Use tree color when we have multiple trees
@@ -128,19 +132,12 @@ export function MarkerLayer({
                 cy="12" 
                 r="8" 
                 fill="${markerColor}"
-                stroke-width="3"
-                class="${
-                  relationshipInfo?.type === "ancestor"
-                    ? "marker-ancestor"
-                    : relationshipInfo?.type === "descendant"
-                    ? "marker-descendant"
-                    : ""
-                }"
-                ${isHighlighted ? 'stroke="#000"' : ""}
+                stroke-width="2"
+                stroke="white"
               />
             </svg>
           `,
-          className: `marker-icon ${isHighlighted ? "highlighted" : ""}`,
+          className: "marker-icon",
           iconSize: [24, 24],
           iconAnchor: [12, 12],
         }),
@@ -158,22 +155,6 @@ export function MarkerLayer({
 
       marker.on("click", () => {
         onSelectAction(person, event);
-      });
-
-      marker.on("mouseover", () => {
-        if (relationshipInfo) {
-          setTemporaryHighlightAction({
-            personId: person.id,
-            type:
-              relationshipInfo.type === "ancestor"
-                ? "ancestors"
-                : "descendants",
-          });
-        }
-      });
-
-      marker.on("mouseout", () => {
-        setTemporaryHighlightAction(null);
       });
 
       markers.addLayer(marker);

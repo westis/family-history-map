@@ -9,6 +9,9 @@ import { YearRangeFilter } from "./YearRangeFilter";
 import { RelationshipFilter } from "./RelationshipFilter";
 import { useState } from "react";
 import { Person, EventType, RelationFilter } from "@/app/utils/types";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { LayerControl } from "./LayerControl";
 
 interface ControlPanelProps {
   people: Person[];
@@ -33,6 +36,8 @@ interface ControlPanelProps {
   onCancelGeocoding: () => void;
   setAncestorFilterOpen: (open: boolean) => void;
   ancestorFilterOpen: boolean;
+  showParishes: boolean;
+  setShowParishes: (show: boolean) => void;
 }
 
 export function ControlPanel({
@@ -53,85 +58,134 @@ export function ControlPanel({
   onCancelGeocoding,
   setAncestorFilterOpen,
   ancestorFilterOpen,
+  showParishes,
+  setShowParishes,
 }: ControlPanelProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("trees");
 
   return (
     <div
       className={cn(
-        "absolute top-4 right-4 z-[1000] transition-transform duration-200",
-        isCollapsed
-          ? "translate-x-[calc(100%-3rem)]"
-          : "bg-white rounded-lg shadow-lg"
+        "absolute top-4 right-4 z-[1000] transition-transform duration-200 bg-white rounded-lg shadow-lg",
+        isCollapsed && "translate-x-[calc(100%-3rem)]"
       )}
     >
-      <div className={cn("p-4", isCollapsed ? "hidden" : "")}>
-        <div className="space-y-6">
-          <FileUpload
-            isFirstTree={true}
-            treeColor="#4A90E2"
-            onFileUploadAction={setPeople}
-            onYearRangeUpdateAction={(minYear, maxYear) =>
-              setYearRange([minYear, maxYear])
-            }
-            onClearCacheAction={() => {
-              if (typeof window !== "undefined") {
-                localStorage.removeItem("geocoding-cache");
-                console.log("Geocoding cache cleared");
-              }
-            }}
-          />
+      <div className={cn("w-[350px] flex flex-col", isCollapsed && "hidden")}>
+        <Tabs
+          defaultValue="trees"
+          value={activeTab}
+          onValueChange={setActiveTab}
+        >
+          <TabsList className="w-full border-b">
+            <TabsTrigger
+              value="trees"
+              className="flex-1 px-4 py-2 data-[state=active]:border-b-2 data-[state=active]:border-primary"
+            >
+              Trees
+            </TabsTrigger>
+            <TabsTrigger
+              value="geocoding"
+              className="flex-1 px-4 py-2 data-[state=active]:border-b-2 data-[state=active]:border-primary"
+            >
+              Places
+            </TabsTrigger>
+            <TabsTrigger
+              value="filters"
+              className="flex-1 px-4 py-2 data-[state=active]:border-b-2 data-[state=active]:border-primary"
+            >
+              Filters
+            </TabsTrigger>
+            <TabsTrigger
+              value="layers"
+              className="flex-1 px-4 py-2 data-[state=active]:border-b-2 data-[state=active]:border-primary"
+            >
+              Layers
+            </TabsTrigger>
+          </TabsList>
 
-          <GeocodingSection
-            isGeocoding={isGeocoding}
-            progress={geocodingProgress}
-            onStartAction={onStartGeocoding}
-            onCancelAction={onCancelGeocoding}
-          />
+          <div className="flex-1 overflow-hidden">
+            <ScrollArea className="h-[500px]">
+              <div className="p-4 space-y-4">
+                <TabsContent value="trees">
+                  <FileUpload
+                    isFirstTree={true}
+                    treeColor="#4A90E2"
+                    onFileUploadAction={setPeople}
+                    onYearRangeUpdateAction={(minYear, maxYear) =>
+                      setYearRange([minYear, maxYear])
+                    }
+                    onClearCacheAction={() => {
+                      localStorage.removeItem("geocoding-cache");
+                    }}
+                  />
 
-          <RootPersonDialog
-            open={dialogOpen}
-            onOpenChangeAction={setDialogOpen}
-            rootPerson={rootPerson}
-            people={people}
-            isCalculating={isCalculating}
-            searchTerm={searchTerm}
-            onSearchChangeAction={setSearchTerm}
-            onSelectPersonAction={setRootPerson}
-          />
+                  <RootPersonDialog
+                    open={dialogOpen}
+                    onOpenChangeAction={setDialogOpen}
+                    rootPerson={rootPerson}
+                    people={people}
+                    isCalculating={isCalculating}
+                    searchTerm={searchTerm}
+                    onSearchChangeAction={setSearchTerm}
+                    onSelectPersonAction={setRootPerson}
+                  />
+                </TabsContent>
 
-          <EventTypeFilter
-            selectedTypes={selectedEventTypes}
-            onChangeAction={setSelectedEventTypes}
-          />
+                <TabsContent value="geocoding">
+                  <GeocodingSection
+                    isGeocoding={isGeocoding}
+                    progress={geocodingProgress}
+                    onStartAction={onStartGeocoding}
+                    onCancelAction={onCancelGeocoding}
+                  />
+                </TabsContent>
 
-          <YearRangeFilter value={yearRange} onChangeAction={setYearRange} />
+                <TabsContent value="filters">
+                  <EventTypeFilter
+                    selectedTypes={selectedEventTypes}
+                    onChangeAction={setSelectedEventTypes}
+                  />
 
-          {rootPerson && (
-            <RelationshipFilter
-              relationFilter={relationFilter}
-              onChangeAction={setRelationFilter}
-            />
-          )}
+                  <YearRangeFilter
+                    value={yearRange}
+                    onChangeAction={setYearRange}
+                  />
 
-          {rootPerson && (
-            <div className="space-y-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setAncestorFilterOpen(true)}
-                className={cn(
-                  "w-full",
-                  ancestorFilterOpen && "bg-blue-50 text-blue-600"
-                )}
-              >
-                Ancestor Numbers Filter
-              </Button>
-            </div>
-          )}
-        </div>
+                  {rootPerson && (
+                    <>
+                      <RelationshipFilter
+                        relationFilter={relationFilter}
+                        onChangeAction={setRelationFilter}
+                      />
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setAncestorFilterOpen(true)}
+                        className={cn(
+                          "w-full",
+                          ancestorFilterOpen && "bg-blue-50 text-blue-600"
+                        )}
+                      >
+                        Ancestor Numbers Filter
+                      </Button>
+                    </>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="layers">
+                  <LayerControl
+                    showParishes={showParishes}
+                    onChangeAction={setShowParishes}
+                  />
+                </TabsContent>
+              </div>
+            </ScrollArea>
+          </div>
+        </Tabs>
       </div>
 
       <div className={cn("border-t", isCollapsed ? "hidden" : "")}>

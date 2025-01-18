@@ -71,6 +71,12 @@ import { SearchBox } from "@/components/ui/control-panel/SearchBox";
 import { TreeManager } from "@/components/ui/control-panel/TreeManager";
 import { TreeOverlaps } from "@/components/ui/TreeOverlaps";
 import { useTrees } from "@/contexts/TreeContext";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 // Remove or comment out the DEFAULT_COLORS constant since it's no longer used
 // const DEFAULT_COLORS = [
@@ -1117,125 +1123,155 @@ export default function FamilyMap() {
 
       <div
         className={cn(
-          "absolute top-4 right-4 z-[1000] transition-transform duration-200",
-          isControlsCollapsed
-            ? "translate-x-[calc(100%-3rem)]"
-            : "bg-white rounded-lg shadow-lg"
+          "absolute top-4 right-4 z-[1000] transition-transform duration-200 bg-white rounded-lg shadow-lg",
+          isControlsCollapsed && "translate-x-[calc(100%-3rem)]"
         )}
       >
-        <div className={cn("p-4", isControlsCollapsed ? "hidden" : "")}>
-          <div className="space-y-6">
-            <SearchBox
-              people={people}
-              onSelectPerson={(person) => {
-                const event =
-                  person.events.find(
-                    (e) =>
-                      e.coordinates[0] !== 0 &&
-                      e.coordinates[1] !== 0 &&
-                      e.place !== "Unknown"
-                  ) || person.events[0];
+        <div
+          className={cn(
+            "w-[350px] max-h-[calc(100vh-8rem)] overflow-y-auto",
+            isControlsCollapsed && "hidden"
+          )}
+        >
+          <div className="p-4 space-y-4">
+            <Accordion type="multiple" defaultValue={["trees"]}>
+              <AccordionItem value="trees">
+                <AccordionTrigger>Trees</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-4 pt-2">
+                    <SearchBox
+                      people={people}
+                      onSelectPerson={(person) => {
+                        const event =
+                          person.events.find(
+                            (e) =>
+                              e.coordinates[0] !== 0 &&
+                              e.coordinates[1] !== 0 &&
+                              e.place !== "Unknown"
+                          ) || person.events[0];
 
-                setSelectedPerson({ person, event });
+                        setSelectedPerson({ person, event });
 
-                if (
-                  event &&
-                  event.coordinates[0] !== 0 &&
-                  event.coordinates[1] !== 0
-                ) {
-                  setZoomToLocation({
-                    coordinates: event.coordinates,
-                    zoom: 14,
-                  });
-                }
-              }}
-              onSelectLocation={(coordinates, zoom) => {
-                setZoomToLocation({ coordinates, zoom });
-              }}
-            />
+                        if (
+                          event &&
+                          event.coordinates[0] !== 0 &&
+                          event.coordinates[1] !== 0
+                        ) {
+                          setZoomToLocation({
+                            coordinates: event.coordinates,
+                            zoom: 14,
+                          });
+                        }
+                      }}
+                      onSelectLocation={(coordinates, zoom) => {
+                        setZoomToLocation({ coordinates, zoom });
+                      }}
+                    />
 
-            <FileUpload
-              isFirstTree={isFirstTree}
-              onFileUploadAction={setPeople}
-              onYearRangeUpdateAction={(minYear, maxYear) => {
-                setYearRange([minYear, maxYear]);
-              }}
-              onClearCacheAction={() => {
-                if (typeof window !== "undefined") {
-                  localStorage.removeItem("geocoding-cache");
-                  console.log("Geocoding cache cleared");
-                }
-              }}
-            />
+                    <FileUpload
+                      isFirstTree={isFirstTree}
+                      treeColor="#4A90E2"
+                      onFileUploadAction={setPeople}
+                      onYearRangeUpdateAction={(minYear, maxYear) => {
+                        setYearRange([minYear, maxYear]);
+                      }}
+                      onClearCacheAction={() => {
+                        localStorage.removeItem("geocoding-cache");
+                      }}
+                    />
 
-            <TreeManager
-              onTreeSelect={(treeId) => {
-                const selectedTree = trees.find((t) => t.id === treeId);
-                if (selectedTree?.isMain) {
-                  setPeople(selectedTree.people);
-                }
-              }}
-              onTreeRemove={handleTreeRemove}
-            />
+                    <TreeManager
+                      onTreeSelect={(treeId) => {
+                        const selectedTree = trees.find((t) => t.id === treeId);
+                        if (selectedTree?.isMain) {
+                          setPeople(selectedTree.people);
+                        }
+                      }}
+                      onTreeRemove={handleTreeRemove}
+                    />
 
-            <GeocodingSection
-              isGeocoding={isGeocoding}
-              progress={geocodingProgress}
-              onStartAction={handleGeocoding}
-              onCancelAction={() => {
-                geocodingRef.current.shouldContinue = false;
-                setIsGeocoding(false);
-              }}
-            />
+                    <RootPersonDialog
+                      open={dialogOpen}
+                      onOpenChangeAction={setDialogOpen}
+                      rootPerson={rootPerson}
+                      people={people}
+                      isCalculating={isCalculating}
+                      searchTerm={searchTerm}
+                      onSearchChangeAction={setSearchTerm}
+                      onSelectPersonAction={setRootPerson}
+                    />
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
 
-            <RootPersonDialog
-              open={dialogOpen}
-              onOpenChangeAction={setDialogOpen}
-              rootPerson={rootPerson}
-              people={people}
-              isCalculating={isCalculating}
-              searchTerm={searchTerm}
-              onSearchChangeAction={setSearchTerm}
-              onSelectPersonAction={setRootPerson}
-            />
+              <AccordionItem value="geocoding">
+                <AccordionTrigger>Places</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-4 pt-2">
+                    <GeocodingSection
+                      isGeocoding={isGeocoding}
+                      progress={geocodingProgress}
+                      onStartAction={handleGeocoding}
+                      onCancelAction={() => {
+                        geocodingRef.current.shouldContinue = false;
+                        setIsGeocoding(false);
+                      }}
+                    />
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
 
-            <EventTypeFilter
-              selectedTypes={selectedEventTypes}
-              onChangeAction={setSelectedEventTypes}
-            />
+              <AccordionItem value="filters">
+                <AccordionTrigger>Filters</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-4 pt-2">
+                    <EventTypeFilter
+                      selectedTypes={selectedEventTypes}
+                      onChangeAction={setSelectedEventTypes}
+                    />
+                    <YearRangeFilter
+                      value={yearRange}
+                      onChangeAction={setYearRange}
+                    />
+                    {rootPerson && (
+                      <>
+                        <RelationshipFilter
+                          relationFilter={relationFilter}
+                          onChangeAction={setRelationFilter}
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setAncestorFilterOpen(true)}
+                          className={cn(
+                            "w-full",
+                            ancestorFilterOpen && "bg-blue-50 text-blue-600"
+                          )}
+                        >
+                          Ancestor Numbers Filter
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
 
-            <YearRangeFilter value={yearRange} onChangeAction={setYearRange} />
-
-            {rootPerson && (
-              <RelationshipFilter
-                relationFilter={relationFilter}
-                onChangeAction={setRelationFilter}
-              />
-            )}
-
-            {rootPerson && (
-              <div className="space-y-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setAncestorFilterOpen(true)}
-                  className={cn(
-                    "w-full",
-                    ancestorFilterOpen && "bg-blue-50 text-blue-600"
-                  )}
-                >
-                  Ancestor Numbers Filter
-                </Button>
-              </div>
-            )}
-
-            <LayerControl
-              showParishes={showParishes}
-              onChangeAction={setShowParishes}
-            />
+              <AccordionItem value="layers">
+                <AccordionTrigger>Map Layers</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-4 pt-2">
+                    <LayerControl
+                      showParishes={showParishes}
+                      onChangeAction={setShowParishes}
+                    />
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </div>
         </div>
 
+        {/* Collapse button */}
         <div className={cn("border-t", isControlsCollapsed ? "hidden" : "")}>
           <Button
             variant="ghost"
