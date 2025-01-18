@@ -9,6 +9,7 @@ import { YearRangeFilter } from "./YearRangeFilter";
 import { RelationshipFilter } from "./RelationshipFilter";
 import { useState } from "react";
 import { Person, EventType, RelationFilter } from "@/app/utils/types";
+import { useTrees } from "@/contexts/TreeContext";
 
 interface ControlPanelProps {
   people: Person[];
@@ -22,15 +23,14 @@ interface ControlPanelProps {
   relationFilter: RelationFilter;
   setRelationFilter: (filter: RelationFilter) => void;
   isCalculating: boolean;
-  placesToGeocode: Set<string>;
-  setPlacesToGeocode: (places: Set<string>) => void;
   isGeocoding: boolean;
   geocodingProgress: {
     processed: number;
     total: number;
     currentPlace: string;
+    treeId: string;
   };
-  onStartGeocoding: () => void;
+  onStartGeocoding: (treeId: string) => void;
   onCancelGeocoding: () => void;
   setAncestorFilterOpen: (open: boolean) => void;
   ancestorFilterOpen: boolean;
@@ -48,8 +48,6 @@ export function ControlPanel({
   relationFilter,
   setRelationFilter,
   isCalculating,
-  placesToGeocode,
-  setPlacesToGeocode,
   isGeocoding,
   geocodingProgress,
   onStartGeocoding,
@@ -60,6 +58,7 @@ export function ControlPanel({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const { trees } = useTrees();
 
   return (
     <div
@@ -73,7 +72,8 @@ export function ControlPanel({
       <div className={cn("p-4", isCollapsed ? "hidden" : "")}>
         <div className="space-y-6">
           <FileUpload
-            onUploadAction={setPeople}
+            isFirstTree={!trees.some((t) => t.isMain)}
+            onFileUploadAction={setPeople}
             onYearRangeUpdateAction={(minYear, maxYear) =>
               setYearRange([minYear, maxYear])
             }
@@ -83,11 +83,9 @@ export function ControlPanel({
                 console.log("Geocoding cache cleared");
               }
             }}
-            setPlacesToGeocodeAction={setPlacesToGeocode}
           />
 
           <GeocodingSection
-            placesToGeocode={placesToGeocode}
             isGeocoding={isGeocoding}
             progress={geocodingProgress}
             onStartAction={onStartGeocoding}

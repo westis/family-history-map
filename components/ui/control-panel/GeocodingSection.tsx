@@ -33,25 +33,29 @@ export function GeocodingSection({
   if (pendingTrees.length === 0) return null;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
       <h3 className="text-sm font-medium">Places Need Geocoding</h3>
       {pendingTrees.map((tree) => (
-        <div key={tree.id} className="space-y-2 p-2 border rounded-lg">
+        <div
+          key={tree.id}
+          className="space-y-2 border rounded-lg p-4 bg-gray-50"
+        >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div
                 className="w-3 h-3 rounded-full"
                 style={{ backgroundColor: tree.color }}
               />
-              <span className="text-sm">{tree.name}</span>
+              <span className="text-sm font-medium">{tree.name}</span>
             </div>
             <span className="text-sm text-gray-500">
               {tree.geocodingStatus.placesToGeocode.size} places need
               coordinates
             </span>
           </div>
+
           {isGeocoding && tree.id === progress.treeId ? (
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Progress
                 value={(progress.processed / progress.total) * 100}
                 className="h-2"
@@ -63,7 +67,7 @@ export function GeocodingSection({
                 <span className="truncate ml-2">{progress.currentPlace}</span>
               </div>
               <Button
-                variant="outline"
+                variant="secondary"
                 size="sm"
                 onClick={onCancelAction}
                 className="w-full"
@@ -73,7 +77,7 @@ export function GeocodingSection({
             </div>
           ) : (
             <Button
-              variant="outline"
+              variant="default"
               size="sm"
               onClick={() => onStartAction(tree.id)}
               disabled={isGeocoding}
@@ -85,12 +89,17 @@ export function GeocodingSection({
                   Waiting...
                 </>
               ) : (
-                "Start Geocoding"
+                "Start Geocoding Places"
               )}
             </Button>
           )}
         </div>
       ))}
+
+      <div className="text-xs text-gray-500">
+        Places will be geocoded using OpenStreetMap data. This process may take
+        a few minutes.
+      </div>
     </div>
   );
 }

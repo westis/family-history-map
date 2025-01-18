@@ -5,15 +5,18 @@ import { Button } from "@/components/ui/button";
 import { FileUp } from "lucide-react";
 import { parseGEDCOM } from "@/app/utils/gedcom";
 import { useTrees } from "@/contexts/TreeContext";
+import { Person } from "@/app/utils/types";
 
 interface FileUploadProps {
-  isFirstTree: boolean;
+  isFirstTree?: boolean;
+  onFileUploadAction: (people: Person[]) => void;
   onYearRangeUpdateAction: (minYear: number, maxYear: number) => void;
   onClearCacheAction: () => void;
 }
 
 export function FileUpload({
-  isFirstTree,
+  isFirstTree = false,
+  onFileUploadAction,
   onYearRangeUpdateAction,
   onClearCacheAction,
 }: FileUploadProps) {
@@ -52,15 +55,15 @@ export function FileUpload({
       });
 
       setNeedsGeocoding(placesToGeocode.size > 0);
-      const isMain = isFirstTree;
-
-      addTree(people, file.name.replace(".ged", ""), isMain);
+      onFileUploadAction(people);
 
       if (years.length) {
         const minYear = Math.min(...years);
         const maxYear = Math.max(...years);
         onYearRangeUpdateAction(minYear, maxYear);
       }
+
+      addTree(people, file.name.replace(".ged", ""), isFirstTree);
 
       if (hasValidCoordinates) {
         event.target.value = "";

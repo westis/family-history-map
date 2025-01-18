@@ -18,6 +18,7 @@ export interface TreeData {
 
 interface TreeContextType {
   trees: TreeData[];
+  setTrees: React.Dispatch<React.SetStateAction<TreeData[]>>;
   addTree: (people: Person[], name: string, isMain?: boolean) => void;
   removeTree: (id: string) => void;
   updateTreeName: (id: string, name: string) => void;
@@ -47,25 +48,45 @@ export function TreeProvider({ children }: { children: React.ReactNode }) {
 
   const addTree = useCallback(
     (people: Person[], name: string, isMain = false) => {
-      const newTree: TreeData = {
-        id: crypto.randomUUID(),
-        name,
-        people,
-        color: DEFAULT_COLORS[trees.length % DEFAULT_COLORS.length],
-        isMain,
-        geocodingStatus: {
-          processed: 0,
-          total: 0,
-          placesToGeocode: new Set(),
+      const placesToGeocode = new Set<string>();
+
+      // Collect places that need geocoding
+      people.forEach((person) => {
+        person.events.forEach((event) => {
+          if (
+            event.place !== "Unknown" &&
+            event.coordinates[0] === 0 &&
+            event.coordinates[1] === 0
+          ) {
+            placesToGeocode.add(event.place);
+          }
+        });
+      });
+
+      setTrees((currentTrees) => [
+        ...currentTrees,
+        {
+          id: crypto.randomUUID(),
+          name,
+          people,
+          color: isMain
+            ? DEFAULT_COLORS[0]
+            : DEFAULT_COLORS[currentTrees.length + 1],
+          isMain,
+          geocodingStatus: {
+            processed: 0,
+            total: placesToGeocode.size,
+            placesToGeocode,
+          },
         },
-      };
-      setTrees((current) => [...current, newTree]);
+      ]);
     },
-    [trees.length]
+    []
   );
 
   const value = {
     trees,
+    setTrees,
     addTree,
     removeTree: (id: string) => {
       console.log("TreeContext: removeTree called with id:", id);

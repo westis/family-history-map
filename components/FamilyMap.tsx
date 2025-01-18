@@ -684,8 +684,9 @@ export default function FamilyMap() {
     [number, number] | null
   >(null);
   const [isLoadingParishes, setIsLoadingParishes] = useState(false);
-  const { trees, removeTree, updateGeocodingStatus } = useTrees();
+  const { trees, removeTree, updateGeocodingStatus, setTrees } = useTrees();
   const [filteredEvents, setFilteredEvents] = useState<FilteredEvent[]>([]);
+  const isFirstTree = useMemo(() => trees.length === 0, [trees]);
 
   // Move loadParishData inside the component
   const loadParishData = useCallback(async () => {
@@ -878,9 +879,29 @@ export default function FamilyMap() {
             ),
           });
 
-          // Update people state if this is the main tree
+          // Update the tree with new coordinates for this place
+          setTrees((currentTrees: TreeData[]) =>
+            currentTrees.map((t: TreeData) => {
+              if (t.id !== tree.id) return t;
+
+              return {
+                ...t,
+                people: t.people.map((person) => ({
+                  ...person,
+                  events: person.events.map((event) => {
+                    if (event.place === place) {
+                      return { ...event, coordinates };
+                    }
+                    return event;
+                  }),
+                })),
+              };
+            })
+          );
+
+          // If this is the main tree, also update the people state
           if (tree.isMain) {
-            setPeople((currentPeople: Person[]) =>
+            setPeople((currentPeople) =>
               currentPeople.map((person) => ({
                 ...person,
                 events: person.events.map((event) => {
@@ -1134,8 +1155,9 @@ export default function FamilyMap() {
             />
 
             <FileUpload
-              isFirstTree={trees.length === 0}
-              onYearRangeUpdateAction={(minYear: number, maxYear: number) => {
+              isFirstTree={isFirstTree}
+              onFileUploadAction={setPeople}
+              onYearRangeUpdateAction={(minYear, maxYear) => {
                 setYearRange([minYear, maxYear]);
               }}
               onClearCacheAction={() => {
