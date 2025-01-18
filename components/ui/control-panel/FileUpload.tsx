@@ -34,7 +34,7 @@ export function FileUpload({
 
     try {
       const text = await file.text();
-      const treeId = "main";
+      const treeId = isFirstTree ? "main" : crypto.randomUUID();
       const people = await parseGEDCOM(text, treeId);
 
       // Add tree color to all events
@@ -109,8 +109,8 @@ export function FileUpload({
         </div>
       </label>
       {needsGeocoding && (
-        <p className="text-sm text-amber-600">
-          Some places need geocoding. Check the Geocoding section below to add
+        <p className="text-sm text-amber-700">
+          Some places need geocoding. Check the Places section below to add
           coordinates.
         </p>
       )}

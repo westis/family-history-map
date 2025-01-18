@@ -68,7 +68,6 @@ import { GeocodingReport } from "@/components/dialogs/GeocodingReport";
 import { InfoPanel } from "@/components/dialogs/InfoPanel";
 import { LayerControl } from "@/components/ui/control-panel/LayerControl";
 import { SearchBox } from "@/components/ui/control-panel/SearchBox";
-import { TreeManager } from "@/components/ui/control-panel/TreeManager";
 import { TreeOverlaps } from "@/components/ui/TreeOverlaps";
 import { useTrees } from "@/contexts/TreeContext";
 import {
@@ -1033,6 +1032,7 @@ export default function FamilyMap() {
     (treeId: string) => {
       console.log("FamilyMap: handleTreeRemove called for tree:", treeId);
       const removedTree = trees.find((t: TreeData) => t.id === treeId);
+      const mainTree = trees.find((t: TreeData) => t.id === "main");
 
       if (removedTree?.isMain) {
         // Main tree removal - clear everything
@@ -1054,11 +1054,16 @@ export default function FamilyMap() {
         localStorage.clear();
         window.location.reload();
       } else {
-        // Comparison tree removal - just update necessary state
+        // Comparison tree removal - maintain main tree people
         console.log("Removing comparison tree...");
 
         // Remove the tree from context
         removeTree(treeId);
+
+        // Ensure people state maintains main tree people
+        if (mainTree) {
+          setPeople(mainTree.people);
+        }
 
         // Clear selection if it was from this tree
         if (selectedPerson?.person.treeId === treeId) {
@@ -1170,8 +1175,12 @@ export default function FamilyMap() {
 
                     <FileUpload
                       isFirstTree={isFirstTree}
-                      treeColor="#4A90E2"
-                      onFileUploadAction={setPeople}
+                      treeColor={isFirstTree ? "#4A90E2" : "#dc2626"}
+                      onFileUploadAction={(uploadedPeople) => {
+                        if (isFirstTree) {
+                          setPeople(uploadedPeople);
+                        }
+                      }}
                       onYearRangeUpdateAction={(minYear, maxYear) => {
                         setYearRange([minYear, maxYear]);
                       }}
@@ -1180,26 +1189,84 @@ export default function FamilyMap() {
                       }}
                     />
 
-                    <TreeManager
-                      onTreeSelect={(treeId) => {
-                        const selectedTree = trees.find((t) => t.id === treeId);
-                        if (selectedTree?.isMain) {
-                          setPeople(selectedTree.people);
-                        }
-                      }}
-                      onTreeRemove={handleTreeRemove}
-                    />
+                    {trees.length > 0 && (
+                      <>
+                        <div className="space-y-4">
+                          <div className="text-sm font-medium text-gray-500">
+                            Main Tree
+                          </div>
+                          {trees.some((t) => t.isMain) && (
+                            <>
+                              {trees
+                                .filter((t) => t.isMain)
+                                .map((tree) => (
+                                  <div
+                                    key={tree.id}
+                                    className="flex items-center justify-between bg-blue-50 p-2 rounded-lg"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <div
+                                        className="w-3 h-3 rounded-full"
+                                        style={{ backgroundColor: tree.color }}
+                                      />
+                                      <span>{tree.name}</span>
+                                    </div>
+                                    <Button
+                                      variant="destructive"
+                                      size="sm"
+                                      onClick={() => handleTreeRemove(tree.id)}
+                                    >
+                                      Remove Tree
+                                    </Button>
+                                  </div>
+                                ))}
 
-                    <RootPersonDialog
-                      open={dialogOpen}
-                      onOpenChangeAction={setDialogOpen}
-                      rootPerson={rootPerson}
-                      people={people}
-                      isCalculating={isCalculating}
-                      searchTerm={searchTerm}
-                      onSearchChangeAction={setSearchTerm}
-                      onSelectPersonAction={setRootPerson}
-                    />
+                              <RootPersonDialog
+                                open={dialogOpen}
+                                onOpenChangeAction={setDialogOpen}
+                                rootPerson={rootPerson}
+                                people={people}
+                                isCalculating={isCalculating}
+                                searchTerm={searchTerm}
+                                onSearchChangeAction={setSearchTerm}
+                                onSelectPersonAction={setRootPerson}
+                              />
+                            </>
+                          )}
+                        </div>
+
+                        {trees.some((t) => !t.isMain) && (
+                          <div className="space-y-4">
+                            <div className="text-sm font-medium text-gray-500">
+                              Comparison Trees
+                            </div>
+                            {trees
+                              .filter((t) => !t.isMain)
+                              .map((tree) => (
+                                <div
+                                  key={tree.id}
+                                  className="flex items-center justify-between p-2 rounded-lg border"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <div
+                                      className="w-3 h-3 rounded-full"
+                                      style={{ backgroundColor: tree.color }}
+                                    />
+                                    <span>{tree.name}</span>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleTreeRemove(tree.id)}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 </AccordionContent>
               </AccordionItem>

@@ -41,18 +41,22 @@ export function RootPersonDialog({
   onSearchChangeAction,
   onSelectPersonAction,
 }: RootPersonDialogProps) {
+  const mainTreePeople = React.useMemo(() => {
+    return people.filter((person) => person.treeId === "main");
+  }, [people]);
+
   const filteredPeople = React.useMemo(() => {
-    if (!searchTerm) return people;
+    if (!searchTerm) return mainTreePeople;
 
     const searchTerms = searchTerm.toLowerCase().trim().split(/\s+/);
 
-    return people
+    return mainTreePeople
       .filter((person) => {
         const name = person.name.toLowerCase();
         return searchTerms.every((term) => name.includes(term));
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [people, searchTerm]);
+  }, [mainTreePeople, searchTerm]);
 
   return (
     <div className="space-y-2">
@@ -61,7 +65,8 @@ export function RootPersonDialog({
         <DialogTrigger asChild>
           <Button variant="outline" className="w-full justify-between">
             {rootPerson
-              ? people.find((p) => p.id === rootPerson)?.name || "Unknown"
+              ? mainTreePeople.find((p) => p.id === rootPerson)?.name ||
+                "Unknown"
               : "Choose Root Person..."}
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
